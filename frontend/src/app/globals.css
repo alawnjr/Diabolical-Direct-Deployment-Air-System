@@ -1,26 +1,282 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0a0e14;
+  --bg-panel: #0d1420;
+  --bg-panel2: #111927;
+  --border: #1a2332;
+  --border-bright: #2a3a4e;
+  --muted: #556677;
+  --body: #c5cdd8;
+  --accent: #ffab00;
+  --success: #76ff03;
+  --threat: #ff1744;
+  --us-drone: #00e5ff;
+  --lucas: #76ff03;
+  --shahed: #ffd600;
+  --sam-site: #ff1744;
+  --ewr: #ffab00;
+  --gas-target: #ff9800;
+  --jammer: #e040fb;
+  --brand-red: #ff1744;
+  --brand-dark: #d50000;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--body);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ── Tactical button ── */
+.btn-tac {
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-tac:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  color: var(--success);
+  border-color: var(--success);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--success);
+  color: #000;
+}
+
+.btn-danger {
+  color: var(--threat);
+  border-color: var(--threat);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--threat);
+  color: #fff;
+}
+
+.btn-accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-accent:hover:not(:disabled) {
+  background: var(--accent);
+  color: #000;
+}
+
+.btn-muted {
+  color: var(--muted);
+  border-color: var(--muted);
+}
+.btn-muted:hover:not(:disabled) {
+  background: var(--muted);
+  color: #000;
+}
+
+/* ── Toggle switch ── */
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.toggle-switch.active {
+  color: var(--body);
+}
+.toggle-dot {
+  width: 28px;
+  height: 14px;
+  border: 1px solid var(--border-bright);
+  border-radius: 7px;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.toggle-dot::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.toggle-switch.active .toggle-dot {
+  border-color: var(--success);
+}
+.toggle-switch.active .toggle-dot::after {
+  transform: translateX(14px);
+  background: var(--success);
+}
+
+/* ── Panel card ── */
+.tac-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+}
+.tac-panel-header {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Slider ── */
+input[type='range'] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--border-bright);
+  outline: none;
+  border-radius: 2px;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--success);
+  cursor: pointer;
+}
+
+/* ── Keyframe animations ── */
+@keyframes threat-pulse {
+  0%, 100% { opacity: 0.12; }
+  50%       { opacity: 0.28; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes scan-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px 1px currentColor; }
+  50%       { box-shadow: 0 0 12px 3px currentColor; }
+}
+
+/* ── Mission log entry ── */
+.log-entry {
+  font-size: 0.65rem;
+  padding: 0.35rem 0.6rem;
+  border-left: 2px solid transparent;
+  animation: fade-in 0.2s ease-out;
+  line-height: 1.5;
+}
+.log-entry.strike    { border-color: var(--success); }
+.log-entry.threat-ev { border-color: var(--threat); }
+.log-entry.detect    { border-color: var(--us-drone); }
+.log-entry.warn      { border-color: var(--accent); }
+.log-entry.info      { border-color: var(--border-bright); }
+
+/* ── Phase badge ── */
+.phase-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid currentColor;
+}
+
+/* ── BDA card ── */
+.bda-card {
+  flex: 1;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+.bda-card .big-num {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.bda-card .label {
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── Landing page ── */
+.landing-bg {
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, #1a2332 1px, transparent 1px),
+    linear-gradient(to bottom, #1a2332 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.4;
 }

@@ -1,0 +1,294 @@
+'use client';
+
+import type { GamePhase, GameState } from '@/lib/types';
+
+interface AssetPaletteProps {
+  phase: GamePhase;
+  numBait: number;
+  numReceiver: number;
+  onNumBaitChange: (n: number) => void;
+  onNumReceiverChange: (n: number) => void;
+  onInitialize: () => void;
+  onExecute: () => void;
+  onFullRun: () => void;
+  onReset: () => void;
+  gameState: GameState | null;
+  isExecuting: boolean;
+}
+
+function AssetCard({
+  color,
+  icon,
+  label,
+  sublabel,
+  count,
+  onCountChange,
+  disabled,
+}: {
+  color: string;
+  icon: string;
+  label: string;
+  sublabel: string;
+  count: number;
+  onCountChange: (n: number) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid #1a2332`,
+        borderLeft: `3px solid ${color}`,
+        background: '#0d1420',
+        padding: '0.6rem',
+        marginBottom: '0.5rem',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+        <div>
+          <div style={{ fontSize: '0.65rem', fontWeight: 700, color, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span>{icon}</span>
+            <span>{label}</span>
+          </div>
+          <div style={{ fontSize: '0.55rem', color: '#556677', marginTop: '0.1rem' }}>{sublabel}</div>
+        </div>
+        <div style={{
+          minWidth: 28, height: 28,
+          border: `1px solid ${color}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '0.8rem', fontWeight: 700, color,
+        }}>
+          {count}
+        </div>
+      </div>
+
+      <input
+        type="range"
+        min={1}
+        max={15}
+        value={count}
+        disabled={disabled}
+        onChange={(e) => onCountChange(Number(e.target.value))}
+        style={{ opacity: disabled ? 0.35 : 1 }}
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem' }}>
+        <span style={{ fontSize: '0.5rem', color: '#556677' }}>1</span>
+        <span style={{ fontSize: '0.5rem', color: '#556677' }}>15</span>
+      </div>
+    </div>
+  );
+}
+
+export default function AssetPalette({
+  phase,
+  numBait,
+  numReceiver,
+  onNumBaitChange,
+  onNumReceiverChange,
+  onInitialize,
+  onExecute,
+  onFullRun,
+  onReset,
+  gameState,
+  isExecuting,
+}: AssetPaletteProps) {
+  const isPlanning = phase === 'PLANNING';
+  const isReady = phase === 'READY';
+  const isExec = phase === 'EXECUTION';
+  const isComplete = phase === 'COMPLETE';
+  const totalDrones = numBait + numReceiver;
+
+  return (
+    <aside
+      style={{
+        width: 260,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderRight: '1px solid #1a2332',
+        background: '#0a0e14',
+        overflowY: 'auto',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          padding: '0.6rem 0.75rem',
+          borderBottom: '1px solid #1a2332',
+          fontSize: '0.6rem',
+          fontWeight: 700,
+          letterSpacing: '0.14em',
+          color: '#556677',
+        }}
+      >
+        ASSET CONFIGURATION
+      </div>
+
+      <div style={{ padding: '0.75rem', flex: 1 }}>
+
+        {/* Force composition */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            FORCE COMPOSITION
+          </div>
+
+          <AssetCard
+            color="#ffd600"
+            icon="◆"
+            label="Shahed Decoy"
+            sublabel="Bait drone — triggers radar activation"
+            count={numBait}
+            onCountChange={onNumBaitChange}
+            disabled={!isPlanning}
+          />
+
+          <AssetCard
+            color="#76ff03"
+            icon="●"
+            label="LUCAS Strike"
+            sublabel="Radar receiver — detects & destroys emitters"
+            count={numReceiver}
+            onCountChange={onNumReceiverChange}
+            disabled={!isPlanning}
+          />
+        </div>
+
+        {/* Summary */}
+        <div
+          style={{
+            border: '1px solid #1a2332',
+            background: '#0d1420',
+            padding: '0.6rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+            MISSION PACKAGE
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+              <span style={{ color: '#ffd600' }}>◆ Shahed Decoys</span>
+              <span style={{ color: '#c5cdd8' }}>{numBait}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+              <span style={{ color: '#76ff03' }}>● LUCAS Drones</span>
+              <span style={{ color: '#c5cdd8' }}>{numReceiver}</span>
+            </div>
+            <div style={{ height: 1, background: '#1a2332', margin: '0.2rem 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+              <span style={{ color: '#556677' }}>TOTAL SORTIES</span>
+              <span style={{ color: '#00e5ff', fontWeight: 700 }}>{totalDrones}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Shahed loadout reminder */}
+        {isPlanning && (
+          <div
+            style={{
+              border: '1px solid #2a3a4e',
+              padding: '0.5rem',
+              marginBottom: '1rem',
+              fontSize: '0.55rem',
+              color: '#556677',
+              lineHeight: 1.6,
+            }}
+          >
+            <div style={{ color: '#ffab00', marginBottom: '0.3rem', letterSpacing: '0.08em' }}>
+              ▸ SHAHED DOCTRINE
+            </div>
+            <div>Decoys enter threat zones to force radar activation. LUCAS drones home on revealed emitters.</div>
+          </div>
+        )}
+
+        {/* Execution status */}
+        {(isExec || isReady || isComplete) && gameState && (
+          <div
+            style={{
+              border: '1px solid #1a2332',
+              background: '#0d1420',
+              padding: '0.6rem',
+              marginBottom: '1rem',
+            }}
+          >
+            <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+              FORCE STATUS
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+                <span style={{ color: '#556677' }}>DRONES ALIVE</span>
+                <span style={{ color: '#76ff03', fontWeight: 700 }}>
+                  {gameState.drones_alive} / {gameState.drones_total}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+                <span style={{ color: '#556677' }}>SCORE</span>
+                <span style={{ color: '#00e5ff', fontWeight: 700 }}>{gameState.score}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+                <span style={{ color: '#556677' }}>TICK</span>
+                <span style={{ color: '#c5cdd8' }}>{gameState.tick} / 60</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {isPlanning && (
+            <button className="btn-tac btn-accent" onClick={onInitialize} style={{ width: '100%' }}>
+              ⬡ INITIALIZE MISSION
+            </button>
+          )}
+
+          {isReady && (
+            <>
+              <button className="btn-tac btn-primary" onClick={onExecute} style={{ width: '100%' }}>
+                ▶ EXECUTE MISSION
+              </button>
+              <button className="btn-tac btn-accent" onClick={onFullRun} style={{ width: '100%' }}>
+                ⚡ FULL RUN
+              </button>
+            </>
+          )}
+
+          {isExec && (
+            <button className="btn-tac btn-accent" onClick={onFullRun} disabled={isExecuting} style={{ width: '100%' }}>
+              ⚡ FULL RUN
+            </button>
+          )}
+
+          {(isReady || isExec || isComplete) && (
+            <button className="btn-tac btn-muted" onClick={onReset} style={{ width: '100%' }}>
+              ↩ NEW SCENARIO
+            </button>
+          )}
+        </div>
+
+        {/* Enemy legend */}
+        <div style={{ marginTop: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            ADVERSARY LEGEND
+          </div>
+          {[
+            { color: '#ffab00', shape: '◆', label: 'EWR / Radar', sub: '100 NM detect' },
+            { color: '#ff1744', shape: '▲', label: 'SAM Launcher', sub: '25 NM engage' },
+            { color: '#ff9800', shape: '■', label: 'Fuel / Supply', sub: 'Strike target' },
+          ].map(({ color, shape, label, sub }) => (
+            <div
+              key={label}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', fontSize: '0.6rem' }}
+            >
+              <span style={{ color, fontSize: '0.8rem', width: 14, textAlign: 'center' }}>{shape}</span>
+              <div>
+                <span style={{ color: '#c5cdd8' }}>{label}</span>
+                <span style={{ color: '#556677', marginLeft: 6 }}>{sub}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </aside>
+  );
+}
