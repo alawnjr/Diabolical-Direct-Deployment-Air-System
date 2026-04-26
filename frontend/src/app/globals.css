@@ -217,6 +217,24 @@ input[type='range']::-webkit-slider-thumb {
   50%       { box-shadow: 0 0 12px 3px currentColor; }
 }
 
+@keyframes drone-detected {
+  0%, 100% { opacity: 0.9; }
+  50%       { opacity: 0.05; }
+}
+
+.drone-detected {
+  animation: drone-detected 0.4s ease-in-out infinite;
+}
+
+@keyframes detection-alert-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.detection-alert {
+  animation: detection-alert-in 0.18s ease-out;
+}
+
 /* ── Mission log entry ── */
 .log-entry {
   font-size: 0.65rem;

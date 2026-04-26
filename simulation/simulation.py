@@ -16,11 +16,11 @@ BAIT_DRONE_SPEED = 200.0 / 60.0  # miles/tick for bait drones (~3.33 mi/tick = 2
 MAX_FLIGHT = 300.0       # miles per drone over full mission
 
 RADAR_SIGHT = 100.0      # miles — default radar detection radius
-RADAR_PING_INTERVAL = 30 # ticks — periodic blind ping regardless of LUCAS proximity
+RADAR_PING_INTERVAL = 90 # ticks — periodic blind ping regardless of LUCAS proximity
 RADAR_VALUE = 4
 
 SAM_MISSILES = 2             # starting missiles per launcher
-MISSILE_HIT_RATE = 0.99      # probability a fired missile kills its target
+MISSILE_HIT_RATE = 0.90      # probability a fired missile kills its target
 MISSILE_FIRE_RANGE = 25.0    # miles — default SAM engagement radius from launcher
 MISSILE_VALUE = 3
 SAM_PLACEMENT_RADIUS = 10.0  # launchers placed within this distance of their radar
@@ -331,6 +331,7 @@ def advance_tick(state: SimState) -> list[dict]:
                 "radar_id": radar.id,
                 "x": round(radar.x, 2),
                 "y": round(radar.y, 2),
+                "detected_drone_ids": [d.id for d in drones_in_sight],
             }
             tick_events.append(ev)
             state.events.append(ev)

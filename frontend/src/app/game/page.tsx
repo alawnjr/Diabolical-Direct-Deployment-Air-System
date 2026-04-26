@@ -21,6 +21,8 @@ export default function GamePage() {
   const [numGas, setNumGas] = useState(4);
   const [allEvents, setAllEvents] = useState<SimEvent[]>([]);
   const [activePings, setActivePings] = useState<PingEffect[]>([]);
+  const [detectedDroneIds, setDetectedDroneIds] = useState<Set<string>>(new Set());
+  const [detectionNotifs, setDetectionNotifs] = useState<{ id: string; droneId: string }[]>([]);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -29,6 +31,7 @@ export default function GamePage() {
 
   const lastTickRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detectionTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const phaseRef = useRef<GamePhase>('PLANNING');
   phaseRef.current = phase;
 
@@ -66,13 +69,13 @@ export default function GamePage() {
     if (newEvts.length > 0) {
       setAllEvents(prev => [...prev, ...newEvts]);
 
-      const pings = newEvts
-        .filter((e): e is RadarPingEvent => e.type === 'radar_ping')
-        .map(e => ({
-          id: `${e.radar_id}-${e.tick}-${Math.random().toString(36).slice(2, 7)}`,
-          x: e.x,
-          y: e.y,
-        }));
+      const pingEvts = newEvts.filter((e): e is RadarPingEvent => e.type === 'radar_ping');
+
+      const pings = pingEvts.map(e => ({
+        id: `${e.radar_id}-${e.tick}-${Math.random().toString(36).slice(2, 7)}`,
+        x: e.x,
+        y: e.y,
+      }));
 
       if (pings.length > 0) {
         setActivePings(prev => [...prev, ...pings]);
@@ -80,6 +83,34 @@ export default function GamePage() {
         setTimeout(() => {
           setActivePings(prev => prev.filter(p => !ids.includes(p.id)));
         }, 2200);
+      }
+
+      const justDetected = [...new Set(pingEvts.flatMap(e => e.detected_drone_ids ?? []))];
+      if (justDetected.length > 0) {
+        setDetectedDroneIds(prev => new Set([...prev, ...justDetected]));
+        const notifs = justDetected.map(droneId => ({
+          id: `notif-${droneId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          droneId,
+        }));
+        setDetectionNotifs(prev => [...prev, ...notifs].slice(-6));
+        const notifIds = notifs.map(n => n.id);
+        setTimeout(() => {
+          setDetectionNotifs(prev => prev.filter(n => !notifIds.includes(n.id)));
+        }, 2500);
+
+        justDetected.forEach(droneId => {
+          const existing = detectionTimersRef.current.get(droneId);
+          if (existing) clearTimeout(existing);
+          const timer = setTimeout(() => {
+            setDetectedDroneIds(prev => {
+              const next = new Set(prev);
+              next.delete(droneId);
+              return next;
+            });
+            detectionTimersRef.current.delete(droneId);
+          }, 2500);
+          detectionTimersRef.current.set(droneId, timer);
+        });
       }
     }
   }, []);
@@ -110,6 +141,10 @@ export default function GamePage() {
     lastTickRef.current = 0;
     setAllEvents([]);
     setActivePings([]);
+    setDetectedDroneIds(new Set());
+    setDetectionNotifs([]);
+    detectionTimersRef.current.forEach(t => clearTimeout(t));
+    detectionTimersRef.current.clear();
     setGameState(null);
     setBackendError(null);
 
@@ -142,6 +177,10 @@ export default function GamePage() {
     lastTickRef.current = 0;
     setAllEvents([]);
     setActivePings([]);
+    setDetectedDroneIds(new Set());
+    setDetectionNotifs([]);
+    detectionTimersRef.current.forEach(t => clearTimeout(t));
+    detectionTimersRef.current.clear();
     setGameState(null);
     setBackendError(null);
     try {
@@ -215,6 +254,10 @@ export default function GamePage() {
     setGameState(null);
     setAllEvents([]);
     setActivePings([]);
+    setDetectedDroneIds(new Set());
+    setDetectionNotifs([]);
+    detectionTimersRef.current.forEach(t => clearTimeout(t));
+    detectionTimersRef.current.clear();
     lastTickRef.current = 0;
     setBackendError(null);
   }, [stopExecution]);
@@ -278,13 +321,53 @@ export default function GamePage() {
           isExecuting={isExecuting}
         />
 
-        <TacticalMap
-          gameState={gameState}
-          activePings={activePings}
-          showThreatRings={showThreatRings}
-          showDetected={showDetected}
-          onToggleThreatRings={() => setShowThreatRings(v => !v)}
-        />
+        <div style={{ flex: 1, display: 'flex', position: 'relative', minWidth: 0 }}>
+          <TacticalMap
+            gameState={gameState}
+            activePings={activePings}
+            detectedDroneIds={detectedDroneIds}
+            showThreatRings={showThreatRings}
+            showDetected={showDetected}
+            onToggleThreatRings={() => setShowThreatRings(v => !v)}
+          />
+          {/* Detection notifications */}
+          {detectionNotifs.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: 10,
+              }}
+            >
+              {detectionNotifs.map(n => (
+                <div
+                  key={n.id}
+                  className="detection-alert"
+                  style={{
+                    background: 'rgba(10,14,20,0.92)',
+                    border: '1px solid #ff1744',
+                    borderLeft: '3px solid #ff1744',
+                    padding: '0.3rem 0.7rem',
+                    fontSize: '0.65rem',
+                    letterSpacing: '0.14em',
+                    color: '#ff1744',
+                    fontFamily: 'inherit',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  📡 RADAR PING — <span style={{ color: '#c5cdd8' }}>{n.droneId.toUpperCase()} DETECTED</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Right panel */}
         <div

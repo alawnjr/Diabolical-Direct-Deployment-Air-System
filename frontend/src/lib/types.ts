@@ -47,6 +47,7 @@ export interface RadarPingEvent {
   radar_id: string;
   x: number;
   y: number;
+  detected_drone_ids?: string[];
 }
 
 export interface MissileFiredEvent {

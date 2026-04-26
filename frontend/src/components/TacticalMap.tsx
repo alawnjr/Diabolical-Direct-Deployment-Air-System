@@ -12,6 +12,7 @@ const ty = (nmY: number) => S - nmY * NM; // Y-axis flipped: 0 = bottom
 interface TacticalMapProps {
   gameState: GameState | null;
   activePings: PingEffect[];
+  detectedDroneIds: Set<string>;
   showThreatRings: boolean;
   showDetected: boolean;
   onToggleThreatRings: () => void;
@@ -218,6 +219,7 @@ function GasIcon({ cx, cy, destroyed }: { cx: number; cy: number; destroyed: boo
 export default function TacticalMap({
   gameState,
   activePings,
+  detectedDroneIds,
   showThreatRings,
   showDetected,
   onToggleThreatRings,
@@ -422,7 +424,7 @@ export default function TacticalMap({
 
         {/* ── LUCAS drones (alive only — dead drones are removed from the map) ── */}
         {drones.filter(d => d.alive).map(d => (
-          <g key={d.id}>
+          <g key={d.id} className={detectedDroneIds.has(d.id) ? 'drone-detected' : undefined}>
             <DroneIcon type={d.type} cx={tx(d.x)} cy={ty(d.y)} alive={d.alive} />
           </g>
         ))}
