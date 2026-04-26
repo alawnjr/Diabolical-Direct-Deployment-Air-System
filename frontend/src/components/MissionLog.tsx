@@ -33,6 +33,12 @@ function classifyEvent(ev: SimEvent): { css: string; icon: string; message: stri
         icon: '🎯',
         message: `T+${ev.tick} TARGET HIT — ${ev.target_id.toUpperCase()} by ${ev.drone_id.toUpperCase()} [+${ev.score_gained}pts]`,
       };
+    case 'launcher_destroyed':
+      return {
+        css: 'strike',
+        icon: '💥',
+        message: `T+${ev.tick} SAM KILLED — ${ev.launcher_id.toUpperCase()} by ${ev.drone_id.toUpperCase()} [+${ev.score_gained}pts]`,
+      };
     default:
       return { css: 'info', icon: '▸', message: `T+${(ev as SimEvent).tick} EVENT` };
   }

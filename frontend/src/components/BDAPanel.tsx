@@ -9,14 +9,16 @@ interface BDAPanelProps {
 export default function BDAPanel({ gameState }: BDAPanelProps) {
   const radarsTotal = gameState?.entities.radars.length ?? 6;
   const radarsDestroyed = gameState?.entities.radars.filter(r => r.destroyed).length ?? 0;
-  const missilesTotal = (gameState?.entities.missile_launchers.length ?? 6) * 2;
+  const launchersTotal = gameState?.entities.missile_launchers.length ?? 6;
+  const launchersDestroyed = gameState?.entities.missile_launchers.filter(ml => ml.destroyed).length ?? 0;
+  const missilesTotal = launchersTotal * 2;
   const missilesFired = gameState?.entities.missile_launchers.reduce(
     (sum, ml) => sum + (2 - ml.missiles_remaining), 0
   ) ?? 0;
   const gasTotal = gameState?.entities.gas_targets.length ?? 4;
   const gasDestroyed = gameState?.entities.gas_targets.filter(t => t.destroyed).length ?? 0;
-  const targetsTotal = radarsTotal + gasTotal;
-  const targetsHit = radarsDestroyed + gasDestroyed;
+  const targetsTotal = radarsTotal + launchersTotal + gasTotal;
+  const targetsHit = radarsDestroyed + launchersDestroyed + gasDestroyed;
   const dronesLost = gameState
     ? gameState.drones_total - gameState.drones_alive
     : 0;
@@ -57,6 +59,11 @@ export default function BDAPanel({ gameState }: BDAPanelProps) {
             {
               label: 'RADARS DESTROYED',
               value: `${radarsDestroyed} / ${radarsTotal}`,
+              color: '#76ff03',
+            },
+            {
+              label: 'SAM LAUNCHERS KILLED',
+              value: `${launchersDestroyed} / ${launchersTotal}`,
               color: '#76ff03',
             },
             {

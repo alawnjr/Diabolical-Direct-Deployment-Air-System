@@ -17,7 +17,6 @@ MAX_FLIGHT = 300.0       # miles per drone over full mission
 
 RADAR_SIGHT = 100.0      # miles — default radar detection radius
 RADAR_PING_INTERVAL = 30 # ticks — periodic blind ping regardless of LUCAS proximity
-RADAR_WANDER = 5.0       # radars drift up to 5 miles from initial pos each tick (10×10 box)
 RADAR_VALUE = 4
 
 SAM_MISSILES = 2             # starting missiles per launcher
@@ -27,12 +26,11 @@ MISSILE_VALUE = 3
 SAM_PLACEMENT_RADIUS = 10.0  # launchers placed within this distance of their radar
 
 GAS_VALUE = 1
-
 DESTROY_THRESHOLD = 3.0  # miles — distance at which a drone "hits" a target
 
-NUM_RADARS = 6
-NUM_LAUNCHERS = 6        # one per radar
-NUM_GAS = 4
+DEFAULT_NUM_RADARS = 6
+DEFAULT_NUM_LAUNCHERS = 6
+DEFAULT_NUM_GAS = 4
 DEFAULT_BAIT = 10
 DEFAULT_RECV = 10
 
@@ -46,8 +44,6 @@ class Radar:
     id: str
     x: float
     y: float
-    initial_x: float = 0.0
-    initial_y: float = 0.0
     revealed: bool = False
     destroyed: bool = False
 
@@ -59,6 +55,7 @@ class MissileLauncher:
     y: float
     radar_id: str = ""
     missiles_remaining: int = SAM_MISSILES
+    destroyed: bool = False
 
 
 @dataclass
@@ -76,6 +73,7 @@ class LucasDrone:
     drone_type: str  # "bait" | "radar_receiver"
     x: float
     y: float
+    angle: float = 0.0   # radians — fan-out heading assigned at init
     alive: bool = True
     miles_flown: float = 0.0
 
@@ -92,8 +90,10 @@ class SimState:
     events: list[dict] = field(default_factory=list)
     radar_sight: float = RADAR_SIGHT
     missile_fire_range: float = MISSILE_FIRE_RANGE
-    # Updated whenever a radar pings; radar_receiver drones read this to navigate.
+    # Revealed radar positions, navigated toward by radar_receiver drones
     revealed_radar_positions: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # Shared visited grid cells — no two drones visit the same 1×1-mile cell
+    visited_coords: set[tuple[int, int]] = field(default_factory=set)
 
 
 # ---------------------------------------------------------------------------
@@ -117,16 +117,62 @@ def _random_positions(n: int, margin: float = 10.0, min_sep: float = 20.0) -> li
     return positions
 
 
-def _launcher_near_radar(radar: Radar) -> tuple[float, float]:
-    """Return a random position within SAM_PLACEMENT_RADIUS miles of the radar."""
+def _launcher_near_radar_xy(rx: float, ry: float) -> tuple[float, float]:
+    """Return a random position within SAM_PLACEMENT_RADIUS miles of (rx, ry)."""
     for _ in range(10_000):
         angle = random.uniform(0, 2 * math.pi)
         d = random.uniform(0, SAM_PLACEMENT_RADIUS)
-        x = radar.x + d * math.cos(angle)
-        y = radar.y + d * math.sin(angle)
+        x = rx + d * math.cos(angle)
+        y = ry + d * math.sin(angle)
         if 5.0 <= x <= GRID_SIZE - 5.0 and 5.0 <= y <= GRID_SIZE - 5.0:
             return x, y
-    return radar.x, radar.y  # fallback
+    return rx, ry  # fallback
+
+
+# ---------------------------------------------------------------------------
+# Map generation
+# ---------------------------------------------------------------------------
+
+def create_random_map(
+    num_radars: int,
+    num_launchers: int,
+    num_gas: int,
+) -> Optional[dict[str, list[tuple[float, float]]]]:
+    """
+    Generate a valid random map configuration.
+
+    Radars and gas targets are placed with at least 20-mile separation.
+    Launchers are placed near radars (round-robin if num_launchers > num_radars).
+
+    Returns a dict with 'radars', 'launchers', 'gas' position lists,
+    or None if a valid placement cannot be found ("can't generate one").
+    """
+    if num_radars < 0 or num_launchers < 0 or num_gas < 0:
+        return None
+
+    total_free = num_radars + num_gas
+    if total_free == 0:
+        return {"radars": [], "launchers": [], "gas": []}
+
+    positions = _random_positions(total_free)
+    if len(positions) < total_free:
+        return None  # can't place all entities with required separation
+
+    radar_positions = positions[:num_radars]
+    gas_positions = positions[num_radars:]
+
+    launcher_positions: list[tuple[float, float]] = []
+    for i in range(num_launchers):
+        if num_radars == 0:
+            return None  # launchers need radars to pair with
+        rx, ry = radar_positions[i % num_radars]
+        launcher_positions.append(_launcher_near_radar_xy(rx, ry))
+
+    return {
+        "radars": radar_positions,
+        "launchers": launcher_positions,
+        "gas": gas_positions,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -138,94 +184,97 @@ def initialize_sim(
     num_receiver: int = DEFAULT_RECV,
     radar_sight: float = RADAR_SIGHT,
     missile_fire_range: float = MISSILE_FIRE_RANGE,
+    num_radars: int = DEFAULT_NUM_RADARS,
+    num_launchers: int = DEFAULT_NUM_LAUNCHERS,
+    num_gas: int = DEFAULT_NUM_GAS,
 ) -> SimState:
     """
     Create and return a fresh SimState.
 
-    Radars and gas targets are placed randomly with at least 20 miles separation.
-    Each missile launcher is placed within 10 miles of its paired radar.
-    All LUCAS drones launch from (0, 0) — the SW corner.
-    Bait drones target gas targets; they cannot detect radar.
+    Raises ValueError("can't generate one") if the map cannot be generated.
+    All drones launch from (0, 0) — the SW corner — and fan out in unique directions
+    spanning a 90° arc across the NE quadrant.
     """
-    state = SimState(radar_sight=radar_sight, missile_fire_range=missile_fire_range)
+    map_data = create_random_map(num_radars, num_launchers, num_gas)
+    if map_data is None:
+        raise ValueError("can't generate one")
 
-    all_pos = _random_positions(NUM_RADARS + NUM_GAS)
-    r_pos = all_pos[:NUM_RADARS]
-    g_pos = all_pos[NUM_RADARS:]
+    state = SimState(
+        radar_sight=radar_sight,
+        missile_fire_range=missile_fire_range,
+        visited_coords={(0, 0)},
+    )
 
     state.radars = [
-        Radar(id=f"r{i+1}", x=x, y=y, initial_x=x, initial_y=y)
-        for i, (x, y) in enumerate(r_pos)
+        Radar(id=f"r{i+1}", x=x, y=y)
+        for i, (x, y) in enumerate(map_data["radars"])
     ]
 
-    # Each launcher is paired with a radar and placed within 10 miles of it.
+    # Pair each launcher with a radar (round-robin)
     state.missile_launchers = []
-    for radar in state.radars:
-        lx, ly = _launcher_near_radar(radar)
+    for i, (lx, ly) in enumerate(map_data["launchers"]):
+        radar_id = state.radars[i % num_radars].id if num_radars > 0 else ""
         state.missile_launchers.append(
-            MissileLauncher(id=f"ml{radar.id[1:]}", x=lx, y=ly, radar_id=radar.id)
+            MissileLauncher(id=f"ml{i+1}", x=lx, y=ly, radar_id=radar_id)
         )
 
-    state.gas_targets = [GasTarget(id=f"gt{i+1}", x=x, y=y) for i, (x, y) in enumerate(g_pos)]
+    state.gas_targets = [
+        GasTarget(id=f"gt{i+1}", x=x, y=y)
+        for i, (x, y) in enumerate(map_data["gas"])
+    ]
 
+    # Fan-out angles: evenly spread across 0°–90° (NE quadrant from SW corner)
+    total_drones = num_bait + num_receiver
     drones: list[LucasDrone] = []
     for i in range(num_bait):
-        drones.append(LucasDrone(id=f"bait_{i+1}", drone_type="bait", x=0.0, y=0.0))
+        global_i = i
+        angle = math.radians(90.0 * (global_i + 0.5) / total_drones) if total_drones > 0 else math.radians(45)
+        drones.append(LucasDrone(id=f"bait_{i+1}", drone_type="bait", x=0.0, y=0.0, angle=angle))
     for i in range(num_receiver):
-        drones.append(LucasDrone(id=f"recv_{i+1}", drone_type="radar_receiver", x=0.0, y=0.0))
-    state.lucas_drones = drones
+        global_i = num_bait + i
+        angle = math.radians(90.0 * (global_i + 0.5) / total_drones) if total_drones > 0 else math.radians(45)
+        drones.append(LucasDrone(id=f"recv_{i+1}", drone_type="radar_receiver", x=0.0, y=0.0, angle=angle))
 
+    state.lucas_drones = drones
     return state
 
 
 # ---------------------------------------------------------------------------
-# Drone AI
+# Drone movement
 # ---------------------------------------------------------------------------
 
-def _drone_target(drone: LucasDrone, state: SimState) -> Optional[tuple[float, float]]:
+# Rotation offsets (degrees) to try when a cell is already visited
+_ROTATION_OFFSETS = [0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90, 120, -120, 150, -150, 180]
+
+
+def _move_drone_direction(drone: LucasDrone, state: SimState) -> None:
     """
-    Return the (x, y) the drone should move toward this tick.
-
-    Bait LUCAS drones cannot detect radar — they target gas targets for pre-mission
-    intelligence value, then fall back to map centre.
-
-    Radar-receiver drones navigate to the nearest revealed (not yet destroyed) radar
-    to destroy it, or patrol the map centre while waiting for pings.
+    Move drone along its assigned heading, detouring to avoid visited cells.
+    Marks the destination cell in the shared visited_coords set.
     """
-    if drone.drone_type == "bait":
-        alive_gas = [t for t in state.gas_targets if not t.destroyed]
-        if alive_gas:
-            best = min(alive_gas, key=lambda t: _dist(drone.x, drone.y, t.x, t.y))
-            return best.x, best.y
-        return GRID_SIZE / 2, GRID_SIZE / 2
-
-    # radar_receiver
-    alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
-    candidates = [
-        (rid, pos)
-        for rid, pos in state.revealed_radar_positions.items()
-        if rid in alive_radar_ids
-    ]
-    if candidates:
-        best = min(candidates, key=lambda rp: _dist(drone.x, drone.y, rp[1][0], rp[1][1]))
-        return best[1]
-
-    return GRID_SIZE / 2, GRID_SIZE / 2
-
-
-def _move_drone(drone: LucasDrone, tx: float, ty: float, speed: float = DRONE_SPEED) -> None:
     remaining = MAX_FLIGHT - drone.miles_flown
     if remaining <= 0:
         return
-    dx, dy = tx - drone.x, ty - drone.y
-    d = math.sqrt(dx * dx + dy * dy)
-    if d < 1e-6:
-        return
-    step = min(speed, d, remaining)
-    ratio = step / d
-    drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
-    drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
+    speed = BAIT_DRONE_SPEED if drone.drone_type == "bait" else DRONE_SPEED
+    step = min(speed, remaining)
+
+    for rot_deg in _ROTATION_OFFSETS:
+        angle = drone.angle + math.radians(rot_deg)
+        nx = max(0.0, min(float(GRID_SIZE - 1), drone.x + math.cos(angle) * step))
+        ny = max(0.0, min(float(GRID_SIZE - 1), drone.y + math.sin(angle) * step))
+        cell = (round(nx), round(ny))
+        if cell not in state.visited_coords:
+            drone.x, drone.y = nx, ny
+            drone.miles_flown += step
+            state.visited_coords.add(cell)
+            return
+
+    # Fallback: advance straight even into a visited cell
+    nx = max(0.0, min(float(GRID_SIZE - 1), drone.x + math.cos(drone.angle) * step))
+    ny = max(0.0, min(float(GRID_SIZE - 1), drone.y + math.sin(drone.angle) * step))
+    drone.x, drone.y = nx, ny
     drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
 
 
 # ---------------------------------------------------------------------------
@@ -236,16 +285,15 @@ def advance_tick(state: SimState) -> list[dict]:
     """
     Advance the simulation by exactly one minute.
 
-    Returns the list of events that fired this tick (also appended to state.events).
-
     Tick order:
-      0. Radars drift randomly within their 10×10-mile wander box
-      1. Move all alive LUCAS drones toward their current target
+      1. Move all alive LUCAS drones along their fan-out headings
       2. Radar sight-range check → ping (reveals radar to receiver drones)
          Radar periodic ping (every 30 ticks, regardless of LUCAS proximity)
          On detection: associated SAM launcher fires once (99% hit rate)
-      3. Surviving drones that reached a radar → radar explodes, drone explodes
-         Surviving drones that reached gas targets → destroy target, add score
+      3. Contact destructions:
+           - Drone reaches radar     → radar destroyed, drone dies
+           - Drone reaches launcher  → launcher destroyed, drone dies
+           - Drone reaches gas target → gas destroyed, drone survives
       4. Check completion (tick ≥ 60)
     """
     if state.complete:
@@ -256,29 +304,20 @@ def advance_tick(state: SimState) -> list[dict]:
 
     alive_drones = [d for d in state.lucas_drones if d.alive]
     alive_radars = [r for r in state.radars if not r.destroyed]
+    alive_launchers = [ml for ml in state.missile_launchers if not ml.destroyed]
     alive_gas = [t for t in state.gas_targets if not t.destroyed]
-
-    # --- 0. Radar movement — drift within 10×10 wander box ---
-    for radar in alive_radars:
-        new_x = radar.initial_x + random.uniform(-RADAR_WANDER, RADAR_WANDER)
-        new_y = radar.initial_y + random.uniform(-RADAR_WANDER, RADAR_WANDER)
-        radar.x = max(0.0, min(float(GRID_SIZE - 1), new_x))
-        radar.y = max(0.0, min(float(GRID_SIZE - 1), new_y))
 
     # --- 1. Move drones ---
     for drone in alive_drones:
-        target = _drone_target(drone, state)
-        if target:
-            speed = BAIT_DRONE_SPEED if drone.drone_type == "bait" else DRONE_SPEED
-            _move_drone(drone, *target, speed=speed)
+        _move_drone_direction(drone, state)
 
     # --- 2. Radar pings and SAM cuing ---
-    alive_drones_after_move = [d for d in state.lucas_drones if d.alive]
+    alive_drones_now = [d for d in state.lucas_drones if d.alive]
     periodic = (state.tick % RADAR_PING_INTERVAL == 0)
 
     for radar in alive_radars:
         drones_in_sight = [
-            d for d in alive_drones_after_move
+            d for d in alive_drones_now
             if _dist(radar.x, radar.y, d.x, d.y) <= state.radar_sight
         ]
         triggered = len(drones_in_sight) > 0
@@ -296,11 +335,9 @@ def advance_tick(state: SimState) -> list[dict]:
             tick_events.append(ev)
             state.events.append(ev)
 
-            # SAM cuing: when radar detects drones, associated launcher fires once
-            # if the nearest detected drone is also within the SAM's engagement range.
             if triggered:
                 armed = [
-                    ml for ml in state.missile_launchers
+                    ml for ml in alive_launchers
                     if ml.radar_id == radar.id and ml.missiles_remaining > 0
                 ]
                 if armed:
@@ -329,42 +366,65 @@ def advance_tick(state: SimState) -> list[dict]:
                         }
                         tick_events.append(missile_ev)
                         state.events.append(missile_ev)
-                        # Refresh alive list for subsequent radars this tick
-                        alive_drones_after_move = [d for d in state.lucas_drones if d.alive]
+                        alive_drones_now = [d for d in state.lucas_drones if d.alive]
 
-    # --- 3. Destructions — drones reaching targets explode on contact ---
+    # --- 3. Contact destructions ---
     surviving = [d for d in state.lucas_drones if d.alive]
+
     for drone in surviving:
         if not drone.alive:
             continue
 
-        # Radar contact: receiver destroys radar, all drones explode
+        # Radar contact: any drone type destroys radar and dies
         for radar in alive_radars:
             if radar.destroyed:
                 continue
             if _dist(drone.x, drone.y, radar.x, radar.y) <= DESTROY_THRESHOLD:
-                if drone.drone_type == "radar_receiver":
-                    radar.destroyed = True
-                    radar.revealed = True
-                    state.score += RADAR_VALUE
-                    ev = {
-                        "tick": state.tick,
-                        "type": "radar_destroyed",
-                        "radar_id": radar.id,
-                        "drone_id": drone.id,
-                        "score_gained": RADAR_VALUE,
-                        "x": round(radar.x, 2),
-                        "y": round(radar.y, 2),
-                    }
-                    tick_events.append(ev)
-                    state.events.append(ev)
-                drone.alive = False  # drone explodes on radar contact regardless of type
+                radar.destroyed = True
+                radar.revealed = True
+                state.score += RADAR_VALUE
+                ev = {
+                    "tick": state.tick,
+                    "type": "radar_destroyed",
+                    "radar_id": radar.id,
+                    "drone_id": drone.id,
+                    "score_gained": RADAR_VALUE,
+                    "x": round(radar.x, 2),
+                    "y": round(radar.y, 2),
+                }
+                tick_events.append(ev)
+                state.events.append(ev)
+                drone.alive = False
                 break
 
         if not drone.alive:
             continue
 
-        # Gas target destruction
+        # Launcher contact: any drone type destroys launcher and dies
+        for launcher in alive_launchers:
+            if launcher.destroyed:
+                continue
+            if _dist(drone.x, drone.y, launcher.x, launcher.y) <= DESTROY_THRESHOLD:
+                launcher.destroyed = True
+                state.score += MISSILE_VALUE
+                ev = {
+                    "tick": state.tick,
+                    "type": "launcher_destroyed",
+                    "launcher_id": launcher.id,
+                    "drone_id": drone.id,
+                    "score_gained": MISSILE_VALUE,
+                    "x": round(launcher.x, 2),
+                    "y": round(launcher.y, 2),
+                }
+                tick_events.append(ev)
+                state.events.append(ev)
+                drone.alive = False
+                break
+
+        if not drone.alive:
+            continue
+
+        # Gas target: drone collects and survives
         for gas in alive_gas:
             if gas.destroyed:
                 continue
@@ -402,14 +462,6 @@ def run_to_completion(state: SimState) -> None:
 # ---------------------------------------------------------------------------
 
 def get_public_state(state: SimState) -> dict[str, Any]:
-    """
-    Serialise SimState for API consumers.
-
-    Radars and gas targets include coordinates only when revealed.
-    Missile launchers never expose coordinates — they are invisible to drones.
-    LUCAS drones are always fully visible.
-    """
-
     def radar_view(r: Radar) -> dict:
         d: dict = {"id": r.id, "revealed": r.revealed, "destroyed": r.destroyed, "value": RADAR_VALUE}
         if r.revealed:
@@ -423,6 +475,7 @@ def get_public_state(state: SimState) -> dict[str, Any]:
             "x": round(ml.x, 2),
             "y": round(ml.y, 2),
             "missiles_remaining": ml.missiles_remaining,
+            "destroyed": ml.destroyed,
             "value": MISSILE_VALUE,
         }
 
@@ -457,25 +510,15 @@ def get_public_state(state: SimState) -> dict[str, Any]:
             "gas_targets": [gas_view(t) for t in state.gas_targets],
             "lucas_drones": [drone_view(d) for d in state.lucas_drones],
         },
-        # Capped at 100 most-recent events to keep payload size sane.
         "events": state.events[-100:],
     }
 
 
 # ---------------------------------------------------------------------------
-# Legacy one-shot runner (called by POST /api/simulate for frontend compat)
+# Legacy one-shot runner (called by POST /api/simulate)
 # ---------------------------------------------------------------------------
 
 def run_simulation(config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Start a fresh simulation and run it for up to `steps` ticks (max 60),
-    returning the full per-tick history.
-
-    config keys (all optional):
-      steps       int  number of ticks to run    (default 10, max 60)
-      num_bait    int  bait drone count           (default 10)
-      num_receiver int radar-receiver drone count (default 10)
-    """
     steps        = min(int(config.get("steps", 10)), MAX_TICKS)
     num_bait     = int(config.get("num_bait", DEFAULT_BAIT))
     num_receiver = int(config.get("num_receiver", DEFAULT_RECV))

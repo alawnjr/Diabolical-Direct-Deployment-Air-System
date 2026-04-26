@@ -12,6 +12,7 @@ export interface MissileLauncherEntity {
   x: number;
   y: number;
   missiles_remaining: number;
+  destroyed: boolean;
   value: number;
 }
 
@@ -78,11 +79,22 @@ export interface GasTargetDestroyedEvent {
   y: number;
 }
 
+export interface LauncherDestroyedEvent {
+  tick: number;
+  type: 'launcher_destroyed';
+  launcher_id: string;
+  drone_id: string;
+  score_gained: number;
+  x: number;
+  y: number;
+}
+
 export type SimEvent =
   | RadarPingEvent
   | MissileFiredEvent
   | RadarDestroyedEvent
-  | GasTargetDestroyedEvent;
+  | GasTargetDestroyedEvent
+  | LauncherDestroyedEvent;
 
 export interface GameState {
   tick: number;

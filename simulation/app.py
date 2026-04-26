@@ -57,6 +57,9 @@ from simulation import (
     SimState,
     RADAR_SIGHT,
     MISSILE_FIRE_RANGE,
+    DEFAULT_NUM_RADARS,
+    DEFAULT_NUM_LAUNCHERS,
+    DEFAULT_NUM_GAS,
     advance_tick,
     get_public_state,
     initialize_sim,
@@ -127,7 +130,16 @@ def start_sim():
     num_receiver       = int(body.get("num_receiver",       10))
     radar_sight        = float(body.get("radar_sight",        RADAR_SIGHT))
     missile_fire_range = float(body.get("missile_fire_range", MISSILE_FIRE_RANGE))
-    _sim = initialize_sim(num_bait, num_receiver, radar_sight, missile_fire_range)
+    num_radars         = int(body.get("num_radars",    DEFAULT_NUM_RADARS))
+    num_launchers      = int(body.get("num_launchers", DEFAULT_NUM_LAUNCHERS))
+    num_gas            = int(body.get("num_gas",       DEFAULT_NUM_GAS))
+    try:
+        _sim = initialize_sim(
+            num_bait, num_receiver, radar_sight, missile_fire_range,
+            num_radars, num_launchers, num_gas,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     return jsonify(get_public_state(_sim))
 
 

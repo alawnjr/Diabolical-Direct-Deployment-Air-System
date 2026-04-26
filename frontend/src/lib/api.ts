@@ -22,6 +22,9 @@ export async function startSim(
   numReceiver = 10,
   radarSight = 100,
   samRange = 25,
+  numRadars = 6,
+  numLaunchers = 6,
+  numGas = 4,
 ): Promise<GameState> {
   const res = await fetch(`${API_BASE}/api/start`, {
     method: 'POST',
@@ -31,9 +34,15 @@ export async function startSim(
       num_receiver: numReceiver,
       radar_sight: radarSight,
       missile_fire_range: samRange,
+      num_radars: numRadars,
+      num_launchers: numLaunchers,
+      num_gas: numGas,
     }),
   });
-  if (!res.ok) throw new Error(`start failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `start failed: ${res.status}`);
+  }
   return res.json();
 }
 

@@ -298,7 +298,7 @@ export function getPublicState(state: ISimState): GameState {
       })),
       missile_launchers: state.missile_launchers.map(ml => ({
         id: ml.id, x: round2(ml.x), y: round2(ml.y),
-        missiles_remaining: ml.missiles_remaining, value: MISSILE_VALUE,
+        missiles_remaining: ml.missiles_remaining, destroyed: false, value: MISSILE_VALUE,
       })),
       gas_targets: state.gas_targets.map(t => ({
         id: t.id, revealed: t.revealed, destroyed: t.destroyed, value: GAS_VALUE,

@@ -158,22 +158,37 @@ function LauncherIcon({
   cx,
   cy,
   missilesRemaining,
+  destroyed,
 }: {
   cx: number;
   cy: number;
   missilesRemaining: number;
+  destroyed: boolean;
 }) {
-  if (missilesRemaining === 0) {
+  if (destroyed) {
     return (
       <g>
-        <line x1={cx - 6} y1={cy - 6} x2={cx + 6} y2={cy + 6} stroke="#ff1744" strokeWidth={2} opacity={0.6} />
-        <line x1={cx + 6} y1={cy - 6} x2={cx - 6} y2={cy + 6} stroke="#ff1744" strokeWidth={2} opacity={0.6} />
+        <line x1={cx - 6} y1={cy - 6} x2={cx + 6} y2={cy + 6} stroke="#ff1744" strokeWidth={2} opacity={0.8} />
+        <line x1={cx + 6} y1={cy - 6} x2={cx - 6} y2={cy + 6} stroke="#ff1744" strokeWidth={2} opacity={0.8} />
         <polygon
           points={`${cx},${cy - 9} ${cx + 8},${cy + 5} ${cx - 8},${cy + 5}`}
           fill="none"
           stroke="#ff1744"
           strokeWidth={0.5}
-          opacity={0.25}
+          opacity={0.3}
+        />
+      </g>
+    );
+  }
+  if (missilesRemaining === 0) {
+    return (
+      <g>
+        <polygon
+          points={`${cx},${cy - 9} ${cx + 8},${cy + 5} ${cx - 8},${cy + 5}`}
+          fill="none"
+          stroke="#ff1744"
+          strokeWidth={1.5}
+          opacity={0.5}
         />
       </g>
     );
@@ -328,7 +343,7 @@ export default function TacticalMap({
         ))}
 
         {/* ── SAM engagement rings (centered on actual launcher position) ── */}
-        {showThreatRings && visibleLaunchers.filter(ml => ml.missiles_remaining > 0).map(ml => (
+        {showThreatRings && visibleLaunchers.filter(ml => !ml.destroyed && ml.missiles_remaining > 0).map(ml => (
           <circle
             key={`ring-ml-${ml.id}`}
             cx={tx(ml.x)}
@@ -374,16 +389,16 @@ export default function TacticalMap({
         {/* ── SAM Launchers ── */}
         {visibleLaunchers.map(ml => (
           <g key={ml.id} filter="url(#glow)">
-            <LauncherIcon cx={tx(ml.x)} cy={ty(ml.y)} missilesRemaining={ml.missiles_remaining} />
+            <LauncherIcon cx={tx(ml.x)} cy={ty(ml.y)} missilesRemaining={ml.missiles_remaining} destroyed={ml.destroyed} />
             <text
               x={tx(ml.x) + 12}
               y={ty(ml.y) + 3}
-              fill={ml.missiles_remaining === 0 ? '#556677' : '#ff1744'}
+              fill={ml.destroyed ? '#333' : ml.missiles_remaining === 0 ? '#556677' : '#ff1744'}
               fontSize={6}
               fontFamily="monospace"
               opacity={0.8}
             >
-              {ml.id.toUpperCase()} [{ml.missiles_remaining}]
+              {ml.id.toUpperCase()}{ml.destroyed ? ' ✗' : ` [${ml.missiles_remaining}]`}
             </text>
           </g>
         ))}

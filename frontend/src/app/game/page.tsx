@@ -16,6 +16,9 @@ export default function GamePage() {
   const [numReceiver, setNumReceiver] = useState(8);
   const [radarRange, setRadarRange] = useState(100);
   const [samRange, setSamRange] = useState(25);
+  const [numRadars, setNumRadars] = useState(6);
+  const [numLaunchers, setNumLaunchers] = useState(6);
+  const [numGas, setNumGas] = useState(4);
   const [allEvents, setAllEvents] = useState<SimEvent[]>([]);
   const [activePings, setActivePings] = useState<PingEffect[]>([]);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
@@ -111,13 +114,18 @@ export default function GamePage() {
     setBackendError(null);
 
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas);
       setGameState(state);
       setPhase('READY');
-    } catch {
-      setBackendError('Failed to initialize simulation. Check that the backend server is running.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setBackendError(
+        msg === "can't generate one"
+          ? "Can't generate a valid map with those settings. Try reducing the number of enemies."
+          : 'Failed to initialize simulation. Check that the backend server is running.'
+      );
     }
-  }, [backendAvailable, numBait, numReceiver]);
+  }, [backendAvailable, numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas]);
 
   const handleExecute = useCallback(() => {
     if (phase !== 'READY') return;
@@ -137,14 +145,19 @@ export default function GamePage() {
     setGameState(null);
     setBackendError(null);
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas);
       setGameState(state);
       setPhase('EXECUTION');
       setIsExecuting(true);
-    } catch {
-      setBackendError('Failed to launch mission. Check that the backend server is running.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setBackendError(
+        msg === "can't generate one"
+          ? "Can't generate a valid map with those settings. Try reducing the number of enemies."
+          : 'Failed to launch mission. Check that the backend server is running.'
+      );
     }
-  }, [backendAvailable, numBait, numReceiver, radarRange, samRange]);
+  }, [backendAvailable, numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas]);
 
   // Execution loop
   useEffect(() => {
@@ -246,10 +259,16 @@ export default function GamePage() {
           numReceiver={numReceiver}
           radarRange={radarRange}
           samRange={samRange}
+          numRadars={numRadars}
+          numLaunchers={numLaunchers}
+          numGas={numGas}
           onNumBaitChange={setNumBait}
           onNumReceiverChange={setNumReceiver}
           onRadarRangeChange={setRadarRange}
           onSamRangeChange={setSamRange}
+          onNumRadarsChange={setNumRadars}
+          onNumLaunchersChange={setNumLaunchers}
+          onNumGasChange={setNumGas}
           onInitialize={handleInitialize}
           onLaunchAll={handleLaunchAll}
           onExecute={handleExecute}

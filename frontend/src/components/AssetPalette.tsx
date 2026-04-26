@@ -8,10 +8,16 @@ interface AssetPaletteProps {
   numReceiver: number;
   radarRange: number;
   samRange: number;
+  numRadars: number;
+  numLaunchers: number;
+  numGas: number;
   onNumBaitChange: (n: number) => void;
   onNumReceiverChange: (n: number) => void;
   onRadarRangeChange: (n: number) => void;
   onSamRangeChange: (n: number) => void;
+  onNumRadarsChange: (n: number) => void;
+  onNumLaunchersChange: (n: number) => void;
+  onNumGasChange: (n: number) => void;
   onInitialize: () => void;
   onLaunchAll: () => void;
   onExecute: () => void;
@@ -90,10 +96,16 @@ export default function AssetPalette({
   numReceiver,
   radarRange,
   samRange,
+  numRadars,
+  numLaunchers,
+  numGas,
   onNumBaitChange,
   onNumReceiverChange,
   onRadarRangeChange,
   onSamRangeChange,
+  onNumRadarsChange,
+  onNumLaunchersChange,
+  onNumGasChange,
   onInitialize,
   onLaunchAll,
   onExecute,
@@ -176,6 +188,39 @@ export default function AssetPalette({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
                 <span style={{ fontSize: '0.62rem', fontWeight: 700, color }}>{label}</span>
                 <span style={{ fontSize: '0.7rem', fontWeight: 700, color, minWidth: 46, textAlign: 'right' }}>{value} {unit}</span>
+              </div>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                disabled={!isPlanning}
+                onChange={e => onChange(Number(e.target.value))}
+                style={{ opacity: isPlanning ? 1 : 0.35 }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.15rem' }}>
+                <span style={{ fontSize: '0.5rem', color: '#556677' }}>{min}</span>
+                <span style={{ fontSize: '0.5rem', color: '#556677' }}>{max}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Enemy composition */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            ENEMY COMPOSITION
+          </div>
+          {[
+            { label: 'EWR Radars',     color: '#ffab00', value: numRadars,    min: 1, max: 10, step: 1, onChange: onNumRadarsChange,    unit: '' },
+            { label: 'SAM Launchers',  color: '#ff1744', value: numLaunchers, min: 0, max: 10, step: 1, onChange: onNumLaunchersChange, unit: '' },
+            { label: 'Fuel Targets',   color: '#ff9800', value: numGas,       min: 1, max: 8,  step: 1, onChange: onNumGasChange,       unit: '' },
+          ].map(({ label, color, value, min, max, step, onChange, unit }) => (
+            <div key={label} style={{ border: `1px solid #1a2332`, borderLeft: `3px solid ${color}`, background: '#0d1420', padding: '0.5rem 0.6rem', marginBottom: '0.4rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, color }}>{label}</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color, minWidth: 24, textAlign: 'right' }}>{value}{unit}</span>
               </div>
               <input
                 type="range"
