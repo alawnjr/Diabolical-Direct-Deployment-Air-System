@@ -65,7 +65,7 @@ export default function LandingPage() {
           color: '#c5cdd8',
           marginBottom: '0.5rem',
         }}>
-          Diabolical Direct Deployment Air System
+          Data Driven Distributed Autonomous Systems
         </div>
 
         <div style={{

@@ -241,7 +241,7 @@ export default function AlgorithmDocs({ onClose }: Props) {
             letterSpacing: '0.1em',
           }}
         >
-          D3AS — DIABOLICAL DIRECT DEPLOYMENT AIR SYSTEM · CLICK OUTSIDE TO CLOSE
+          D3AS — DATA DRIVEN DISTRIBUTED AUTONOMOUS SYSTEMS · CLICK OUTSIDE TO CLOSE
         </div>
       </div>
     </div>

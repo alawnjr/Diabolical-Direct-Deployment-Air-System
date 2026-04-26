@@ -103,7 +103,7 @@ export default function TopBar({
             textTransform: 'uppercase',
           }}
         >
-          Diabolical Direct Deployment Air System
+          Data Driven Distributed Autonomous Systems
         </span>
       </div>
 

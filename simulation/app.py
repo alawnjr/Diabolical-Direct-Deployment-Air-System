@@ -1,5 +1,5 @@
 """
-D3AS — Diabolical Direct Deployment Air System
+D3AS — Data Driven Distributed Autonomous Systems
 Flask REST API backend
 
 All simulation state lives in the module-level `_sim` variable.

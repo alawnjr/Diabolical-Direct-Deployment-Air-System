@@ -9,7 +9,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'D³AS — Diabolical Direct Deployment Air System',
+  title: 'D³AS — Data Driven Distributed Autonomous Systems',
   description: 'SEAD/DEAD Air Defense Wargaming Simulator — SCSP Hackathon 2026',
 };
 
