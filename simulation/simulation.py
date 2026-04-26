@@ -30,6 +30,12 @@ GAS_VALUE = 1
 DESTROY_THRESHOLD = 3.0  # miles — distance at which a drone "hits" a target
 CAMERA_DRONE_RANGE = 30.0  # miles — camera drone detection/lock-on radius
 
+# Algorithms where bait drones launch this many ticks before strike/camera drones.
+BAIT_HEAD_START = 8
+
+# Algorithms that benefit from bait vanguard (all others launch all drones simultaneously).
+_EARLY_BAIT_ALGOS = {"grid_sweep", "hotspot_reinforce", "scout_fix_finish", "saturation_fan", "meta_selector", "triangulation"}
+
 DEFAULT_NUM_RADARS = 6
 DEFAULT_NUM_LAUNCHERS = 6
 DEFAULT_NUM_GAS = 4
@@ -354,8 +360,8 @@ def _navigate_receiver_to_radar(drone: LucasDrone, state: SimState) -> None:
 
 def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimState) -> None:
     """Move a drone straight toward (tx, ty) at DRONE_SPEED.
-    Updates drone.angle to this heading so the drone continues in the same
-    direction via _move_drone_direction if the target disappears next tick."""
+    drone.angle is intentionally NOT updated so that falling back to the
+    algorithm always uses the algorithm-assigned heading, not a stale homing direction."""
     remaining = MAX_FLIGHT - drone.miles_flown
     if remaining <= 0:
         return
@@ -363,7 +369,6 @@ def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimStat
     d = math.sqrt(dx * dx + dy * dy)
     if d < 1e-6:
         return
-    drone.angle = math.atan2(dy, dx)
     step = min(DRONE_SPEED, d, remaining)
     ratio = step / d
     drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
@@ -385,9 +390,18 @@ def _init_algorithm(state: SimState) -> None:
     n = len(drones)
 
     if algo in ("grid_sweep", "meta_selector"):
-        # Parallel horizontal lanes evenly spread across map height (10–190 NM)
-        for i, drone in enumerate(drones):
-            lane_y = 10.0 + 180.0 * i / max(n - 1, 1)
+        # Bait drones cover the FULL latitude (10–190 NM) as a vanguard wave,
+        # indexed among themselves so they spread evenly regardless of fleet size.
+        for i, drone in enumerate(bait_drones):
+            lane_y = 10.0 + 180.0 * i / max(len(bait_drones) - 1, 1)
+            state.algorithm_state[drone.id] = {"lane_y": lane_y, "dir": 1}
+        # Strike and camera drones also get full-latitude lanes (delayed launch).
+        for i, drone in enumerate(recv_drones):
+            lane_y = 10.0 + 180.0 * i / max(len(recv_drones) - 1, 1)
+            state.algorithm_state[drone.id] = {"lane_y": lane_y, "dir": 1}
+        camera_drones_gs = [d for d in state.lucas_drones if d.drone_type == "camera"]
+        for i, drone in enumerate(camera_drones_gs):
+            lane_y = 10.0 + 180.0 * i / max(len(camera_drones_gs) - 1, 1)
             state.algorithm_state[drone.id] = {"lane_y": lane_y, "dir": 1}
         if algo == "meta_selector":
             state.algorithm_state["__meta_phase"] = "grid_sweep"
@@ -455,6 +469,13 @@ def _init_algorithm(state: SimState) -> None:
 
     # triangulation, hotspot_reinforce, random_walk, scout_fix_finish:
     # keep the default fan-out angles assigned during initialize_sim
+
+    # For algorithms that benefit from an early bait vanguard, delay launch of
+    # all strike and camera drones so bait drones get a head start.
+    if algo in _EARLY_BAIT_ALGOS:
+        camera_drones = [d for d in state.lucas_drones if d.drone_type == "camera"]
+        for drone in recv_drones + camera_drones:
+            state.algorithm_state.setdefault(drone.id, {})["start_tick"] = BAIT_HEAD_START
 
 
 def _algo_grid_sweep(drone: LucasDrone, state: SimState) -> None:
@@ -722,6 +743,9 @@ def advance_tick(state: SimState) -> list[dict]:
     # Camera drones: rescan for nearest target within detection range each tick.
     for drone in alive_drones:
         if drone.drone_type == "camera" and drone.camera_on:
+            # Skip scan while still in launch-delay window.
+            if state.tick < state.algorithm_state.get(drone.id, {}).get("start_tick", 0):
+                continue
             nearest: Optional[tuple[float, float]] = None
             nearest_d = float("inf")
             for tgt in (*alive_radars, *alive_launchers, *alive_gas):
@@ -733,13 +757,17 @@ def advance_tick(state: SimState) -> list[dict]:
             drone.target_y = nearest[1] if nearest else None
 
     for drone in alive_drones:
+        # Respect per-drone launch delay (bait vanguard algorithms).
+        if state.tick < state.algorithm_state.get(drone.id, {}).get("start_tick", 0):
+            continue
+
         if drone.drone_type == "bait":
             _move_drone_by_algorithm(drone, state)
         elif drone.drone_type == "radar_receiver":
-            # Strike drone rule: home in on the nearest revealed alive radar regardless
-            # of the active algorithm.  If no radar is known yet, keep the current
-            # heading (drone.angle is already pointing toward the last known target
-            # from _move_drone_to_point, so _move_drone_direction continues straight).
+            # Strike drone: home in on the nearest revealed alive radar.
+            # Falls back to the overall algorithm when no radar is known or all known
+            # radars have been destroyed — unless a new ping reveals another target,
+            # which repopulates candidates and re-engages the intercept next tick.
             alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
             candidates = [
                 (rx, ry)
@@ -750,12 +778,15 @@ def advance_tick(state: SimState) -> list[dict]:
                 stx, sty = min(candidates, key=lambda p: _dist(drone.x, drone.y, p[0], p[1]))
                 _move_drone_to_point(drone, stx, sty, state)
             else:
-                _move_drone_direction(drone, state)
+                _move_drone_by_algorithm(drone, state)
         else:  # camera
+            # Camera drone: fly toward nearest in-range target.
+            # Falls back to the overall algorithm when nothing is in sensor range —
+            # unless a new target enters range next tick, which re-engages pursuit.
             if drone.target_x is not None:
                 _move_drone_to_point(drone, drone.target_x, drone.target_y, state)  # type: ignore[arg-type]
             else:
-                _move_drone_direction(drone, state)
+                _move_drone_by_algorithm(drone, state)
 
     # --- 2. Radar pings ---
     # A radar only pings (and reveals itself) when at least one drone is within range.
@@ -872,7 +903,7 @@ def advance_tick(state: SimState) -> list[dict]:
         if not drone.alive:
             continue
 
-        # Gas target: drone collects and survives
+        # Gas target: drone destroys target and dies
         for gas in alive_gas:
             if gas.destroyed:
                 continue
@@ -891,6 +922,8 @@ def advance_tick(state: SimState) -> list[dict]:
                 }
                 tick_events.append(ev)
                 state.events.append(ev)
+                drone.alive = False
+                break
 
     # --- 5. Completion check ---
     if state.tick >= MAX_TICKS:
