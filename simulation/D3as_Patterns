@@ -1,0 +1,403 @@
+"""
+D3AS Pattern Lab — Python Edition (v2)
+=======================================
+Implements all 12 SEAD/DEAD bait search algorithms, updated to match
+the new simulation.py architecture:
+
+  - Drones fly by ANGLE (set at init), not by target-seeking each tick
+  - Bait speed: 3.33 mi/tick (200 mph), Recv speed: 5.0 mi/tick
+  - Radars cycle ON for 5 ticks every 30-tick window (random power_offset)
+  - SAMs are paired to radars, have finite missiles (2 each), 90% hit rate
+  - Launchers placed within 10 miles of their paired radar
+  - Any drone (bait or recv) can destroy radar/launcher on contact and dies
+  - Gas targets: drone survives on collection
+  - visited_coords prevents overlap between drones
+
+Each algorithm sets the bait drone angles at init. Recv drone angles
+are set by the standard fan-out. Algorithms may also override recv angles
+for coordinated patterns.
+
+Scoring:
+  Radar kill:    +4 pts
+  Launcher kill: +3 pts
+  Gas collect:   +1 pt
+  Max possible:  6x4 + 6x3 + 4x1 = 46 pts
+
+Usage:
+    python d3as_patterns.py                     # all 12 algorithms, 50 trials
+    python d3as_patterns.py --trials 200
+    python d3as_patterns.py --bait 15 --recv 8
+    python d3as_patterns.py --algo 1 5 11       # specific algorithms
+    python d3as_patterns.py --preview 6         # animated terminal preview
+    python d3as_patterns.py --list              # list all algorithms
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import random
+import sys
+import time
+from dataclasses import dataclass, field
+from statistics import mean, stdev
+from typing import Callable
+
+from simulation import (
+    GRID_SIZE, MAX_TICKS, BAIT_DRONE_SPEED, DRONE_SPEED, MAX_FLIGHT,
+    RADAR_SIGHT, MISSILE_FIRE_RANGE, RADAR_VALUE, MISSILE_VALUE, GAS_VALUE,
+    SAM_MISSILES, MISSILE_HIT_RATE,
+    DEFAULT_NUM_RADARS, DEFAULT_NUM_LAUNCHERS, DEFAULT_NUM_GAS,
+    DEFAULT_BAIT, DEFAULT_RECV,
+    LucasDrone, SimState,
+    initialize_sim, advance_tick, run_to_completion,
+)
+
+MAX_POSSIBLE_SCORE = (
+    DEFAULT_NUM_RADARS    * RADAR_VALUE +
+    DEFAULT_NUM_LAUNCHERS * MISSILE_VALUE +
+    DEFAULT_NUM_GAS       * GAS_VALUE
+)  # 6x4 + 6x3 + 4x1 = 46
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def _spread_angles(n: int, angle_min: float, angle_max: float) -> list[float]:
+    if n <= 0:
+        return []
+    if n == 1:
+        return [(angle_min + angle_max) / 2]
+    return [angle_min + i * (angle_max - angle_min) / (n - 1) for i in range(n)]
+
+def _bait(drones):  return [d for d in drones if d.drone_type == "bait"]
+def _recv(drones):  return [d for d in drones if d.drone_type == "radar_receiver"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12 ALGORITHM ANGLE-ASSIGNMENT FUNCTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def assign_grid_sweep(drones, num_bait, num_recv):
+    """Parallel lanes: bait drones spread evenly across full 0-90 arc."""
+    baits = _bait(drones)
+    for drone, angle in zip(baits, _spread_angles(len(baits), 0.0, math.pi/2)):
+        drone.angle = angle
+
+def assign_spiral_outward(drones, num_bait, num_recv):
+    """Tight cluster near 45 then offset by small increments; good near known emitter."""
+    baits = _bait(drones)
+    n = len(baits)
+    base = math.pi / 4
+    spread = math.radians(20)
+    for i, drone in enumerate(baits):
+        offset = (i - n / 2) * (spread / max(n - 1, 1))
+        drone.angle = base + offset
+
+def assign_saturation_fan(drones, num_bait, num_recv):
+    """Full 0-90 spread; recv clustered centrally. Cheap overload, attrition-heavy."""
+    baits = _bait(drones)
+    for drone, angle in zip(baits, _spread_angles(len(baits), 0.0, math.pi/2)):
+        drone.angle = angle
+    recvs = _recv(drones)
+    for drone, angle in zip(recvs, _spread_angles(len(recvs), math.radians(30), math.radians(60))):
+        drone.angle = angle
+
+def assign_bait_ladder(drones, num_bait, num_recv):
+    """Shallow-to-steep stagger: first drone enters threat zone early, triggers pings."""
+    baits = _bait(drones)
+    for drone, angle in zip(baits, _spread_angles(len(baits), math.radians(5), math.radians(85))):
+        drone.angle = angle
+
+def assign_reload_trap(drones, num_bait, num_recv):
+    """Wave 1 drains SAM magazines (15-45); wave 2 exploits emptied launchers (45-85)."""
+    baits = _bait(drones)
+    n = len(baits)
+    wave1 = baits[:n//2]
+    wave2 = baits[n//2:]
+    for drone, angle in zip(wave1, _spread_angles(len(wave1), math.radians(15), math.radians(45))):
+        drone.angle = angle
+    for drone, angle in zip(wave2, _spread_angles(len(wave2), math.radians(45), math.radians(85))):
+        drone.angle = angle
+    recvs = _recv(drones)
+    for drone, angle in zip(recvs, _spread_angles(len(recvs), math.radians(40), math.radians(80))):
+        drone.angle = angle
+
+def assign_multi_azimuth(drones, num_bait, num_recv):
+    """Four distinct axes (10,30,60,80 deg) to overload radar tracking."""
+    axes = [math.radians(a) for a in [10, 30, 60, 80]]
+    for i, drone in enumerate(_bait(drones)):
+        drone.angle = axes[i % len(axes)]
+
+def assign_random_walk(drones, num_bait, num_recv):
+    """Random heading per drone. Hard to predict; inefficient. Chaos baseline."""
+    for drone in _bait(drones):
+        drone.angle = random.uniform(0, math.pi/2)
+
+def assign_sector_claim(drones, num_bait, num_recv):
+    """Interleaved bait+recv sectors; prevents angular overlap. Great scaling."""
+    total = num_bait + num_recv
+    all_angles = _spread_angles(total, math.radians(2), math.radians(88))
+    baits = _bait(drones)
+    recvs = _recv(drones)
+    bait_angles = [all_angles[i] for i in range(0, total, 2)][:len(baits)]
+    recv_angles  = [all_angles[i] for i in range(1, total, 2)][:len(recvs)]
+    for drone, angle in zip(baits, bait_angles):
+        drone.angle = angle
+    for drone, angle in zip(recvs, recv_angles):
+        drone.angle = angle
+
+def assign_triangulation_lite(drones, num_bait, num_recv):
+    """Pairs of drones fly 8-deg apart so both enter a radar ring simultaneously."""
+    baits = _bait(drones)
+    n = len(baits)
+    pair_sep = math.radians(8)
+    base_angles = _spread_angles((n+1)//2, math.radians(10), math.radians(80))
+    for i, drone in enumerate(baits):
+        base = base_angles[min(i//2, len(base_angles)-1)]
+        drone.angle = base + (pair_sep/2 if i%2==0 else -pair_sep/2)
+
+def assign_hotspot_reinforce(drones, num_bait, num_recv):
+    """20% scouts spread wide; 80% mass at 45 ready to exploit any hotspot."""
+    baits = _bait(drones)
+    n = len(baits)
+    n_scouts = max(1, round(n*0.20))
+    for drone, angle in zip(baits[:n_scouts], _spread_angles(n_scouts, math.radians(5), math.radians(85))):
+        drone.angle = angle
+    main = baits[n_scouts:]
+    for drone, angle in zip(main, _spread_angles(len(main), math.radians(35), math.radians(55))):
+        drone.angle = angle
+
+def assign_scout_fix_finish(drones, num_bait, num_recv):
+    """Scouts 25% wide, fixers 35% narrow, finishers 40% concentrated. Recv take high angles."""
+    baits = _bait(drones)
+    n = len(baits)
+    n_s = max(1, round(n*0.25))
+    n_f = max(1, round(n*0.35))
+    scouts, fixers, finishers = baits[:n_s], baits[n_s:n_s+n_f], baits[n_s+n_f:]
+    for drone, angle in zip(scouts,    _spread_angles(len(scouts),         math.radians(2),  math.radians(88))): drone.angle = angle
+    for drone, angle in zip(fixers,    _spread_angles(len(fixers),         math.radians(30), math.radians(60))): drone.angle = angle
+    for drone, angle in zip(finishers, _spread_angles(max(len(finishers),1),math.radians(40),math.radians(50))): drone.angle = angle
+    recvs = _recv(drones)
+    for drone, angle in zip(recvs, _spread_angles(len(recvs), math.radians(55), math.radians(85))):
+        drone.angle = angle
+
+def assign_meta_selector(drones, num_bait, num_recv):
+    """Combines fan (1st third), reload-trap wave2 (2nd third), finisher cluster (3rd third)."""
+    baits = _bait(drones)
+    n = len(baits)
+    t = n // 3
+    fan, trap, finish = baits[:t], baits[t:2*t], baits[2*t:]
+    for drone, angle in zip(fan,    _spread_angles(len(fan),             math.radians(0),  math.radians(90))): drone.angle = angle
+    for drone, angle in zip(trap,   _spread_angles(len(trap),            math.radians(45), math.radians(85))): drone.angle = angle
+    for drone, angle in zip(finish, _spread_angles(max(len(finish),1),   math.radians(40), math.radians(50))): drone.angle = angle
+    recvs = _recv(drones)
+    pair_sep = math.radians(8)
+    base_angles = _spread_angles((len(recvs)+1)//2, math.radians(15), math.radians(75))
+    for i, drone in enumerate(recvs):
+        base = base_angles[min(i//2, len(base_angles)-1)]
+        drone.angle = base + (pair_sep/2 if i%2==0 else -pair_sep/2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Algorithm registry
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclass
+class Algorithm:
+    id: int; name: str; mission: str; logic: str; behavior: str
+    strength: str; weakness: str; extra_tech: str; best_against: str
+    color: str; assign_fn: object
+
+ALGORITHMS: list[Algorithm] = [
+    Algorithm(1,  "Grid Sweep",         "Broad search",           "Divide map evenly",             "Parallel lanes",           "Simple",               "Predictable",           "None",                 "Unknown fixed radars",   "#a78bfa", assign_grid_sweep),
+    Algorithm(2,  "Spiral Outward",     "Local search",           "Expand from point",             "Spiral path",              "Good near known site", "Slow wide-area",        "None",                 "Last known emitter",     "#f472b6", assign_spiral_outward),
+    Algorithm(3,  "Saturation Fan",     "Trigger defenses",       "Many drones frontal spread",    "Cone ingress",             "Cheap overload",       "Attrition heavy",       "None",                 "Trigger-happy SAMs",     "#4af",    assign_saturation_fan),
+    Algorithm(4,  "Bait Ladder",        "Force emission",         "Sequential probes",             "One enters, others wait",  "Efficient reveal",     "Needs threat estimate", "Low comms",            "Cautious SAMs",          "#34d399", assign_bait_ladder),
+    Algorithm(5,  "Reload Trap",        "Drain missiles",         "Wave 1 bait, wave 2 strike",    "Timed waves",              "Great economics",      "Timing sensitive",      "None",                 "Finite interceptors",    "#fb923c", assign_reload_trap),
+    Algorithm(6,  "Multi-Azimuth",      "Overload tracking",      "Attack from angles",            "Split bearings",           "Hard to defend",       "Needs sync",            "Medium comms",         "Single radar batteries", "#f59e0b", assign_multi_azimuth),
+    Algorithm(7,  "Random Walk",        "Unpredictable search",   "Stochastic movement",           "Random turns",             "Hard to ambush",       "Inefficient",           "None",                 "Adaptive enemy",         "#94a3b8", assign_random_walk),
+    Algorithm(8,  "Sector Claim",       "Efficient swarm search", "Assign sectors",                "Dynamic coverage",         "Great scaling",        "Needs comms",           "Medium comms",         "Large battlespace",      "#e879f9", assign_sector_claim),
+    Algorithm(9,  "Triangulation Lite", "RF geolocate",           "Bearings from 2+ drones",       "Shared emitter bearings",  "High value",           "Needs receivers",       "RF receivers + comms", "Emitting radars",        "#60a5fa", assign_triangulation_lite),
+    Algorithm(10, "Hotspot Reinforce",  "Exploit signals",        "Mass near contact",             "Re-route nearby drones",   "Fast exploitation",    "Can be spoofed",        "Medium comms",         "Brief emitters",         "#f87171", assign_hotspot_reinforce),
+    Algorithm(11, "Scout-Fix-Finish",   "Role specialisation",    "Search-confirm-strike",         "Different drone roles",    "Efficient",            "More logic needed",     "Medium comms",         "Mixed defenses",         "#7ee8a2", assign_scout_fix_finish),
+    Algorithm(12, "Meta Selector",      "Adapt doctrine",         "Change based on enemy response","Switch algorithms mid-run","Highest performance",  "Needs data",            "Basic analytics",      "All enemies",            "#EF9F27", assign_meta_selector),
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runner
+# ─────────────────────────────────────────────────────────────────────────────
+def run_sim_with_algo(algo: Algorithm, num_bait: int, num_recv: int) -> SimState:
+    state = initialize_sim(num_bait, num_recv)
+    algo.assign_fn(state.lucas_drones, num_bait, num_recv)
+    run_to_completion(state)
+    return state
+
+
+@dataclass
+class TrialResult:
+    algo: Algorithm
+    scores: list          = field(default_factory=list)
+    radars_killed: list   = field(default_factory=list)
+    launchers_killed: list= field(default_factory=list)
+    gas_collected: list   = field(default_factory=list)
+    survival: list        = field(default_factory=list)
+    missiles_taken: list  = field(default_factory=list)
+
+    @property
+    def avg(self):            return mean(self.scores)         if self.scores else 0.0
+    @property
+    def sd(self):             return stdev(self.scores)        if len(self.scores)>1 else 0.0
+    @property
+    def best(self):           return max(self.scores)          if self.scores else 0
+    @property
+    def worst(self):          return min(self.scores)          if self.scores else 0
+    @property
+    def avg_radars(self):     return mean(self.radars_killed)   if self.radars_killed else 0.0
+    @property
+    def avg_launchers(self):  return mean(self.launchers_killed) if self.launchers_killed else 0.0
+    @property
+    def avg_gas(self):        return mean(self.gas_collected)   if self.gas_collected else 0.0
+    @property
+    def avg_survival(self):   return mean(self.survival)        if self.survival else 0.0
+    @property
+    def avg_msls(self):       return mean(self.missiles_taken)  if self.missiles_taken else 0.0
+
+
+def run_trials(algo, num_bait, num_recv, trials, verbose=False):
+    r = TrialResult(algo=algo)
+    total = num_bait + num_recv
+    for t in range(trials):
+        state = run_sim_with_algo(algo, num_bait, num_recv)
+        rk = sum(1 for x in state.radars            if x.destroyed)
+        lk = sum(1 for x in state.missile_launchers if x.destroyed)
+        gk = sum(1 for x in state.gas_targets        if x.destroyed)
+        al = sum(1 for x in state.lucas_drones       if x.alive)
+        ms = sum(1 for e in state.events if e.get("type") == "missile_fired")
+        r.scores.append(state.score)
+        r.radars_killed.append(rk)
+        r.launchers_killed.append(lk)
+        r.gas_collected.append(gk)
+        r.survival.append(al / max(total, 1))
+        r.missiles_taken.append(ms)
+        if verbose:
+            print(f"  [{t+1:3d}/{trials}] score={state.score:3d}  R={rk}/{DEFAULT_NUM_RADARS}  "
+                  f"L={lk}/{DEFAULT_NUM_LAUNCHERS}  G={gk}/{DEFAULT_NUM_GAS}  "
+                  f"alive={al}/{total}  msls={ms}")
+    return r
+
+
+def preview_run(algo, num_bait, num_recv, delay=0.08):
+    state = initialize_sim(num_bait, num_recv)
+    algo.assign_fn(state.lucas_drones, num_bait, num_recv)
+    print(f"\n{'─'*65}")
+    print(f"  PREVIEW: {algo.name}  ({num_bait}b + {num_recv}r drones)")
+    print(f"  Mission: {algo.mission}  |  Behavior: {algo.behavior}")
+    print(f"  Strength: {algo.strength}  |  Weakness: {algo.weakness}")
+    print(f"{'─'*65}\n")
+    while not state.complete:
+        evs = advance_tick(state)
+        alive = sum(1 for d in state.lucas_drones if d.alive)
+        done = int((state.tick / MAX_TICKS) * 30)
+        bar = "█"*done + "░"*(30-done)
+        print(f"  T{state.tick:02d} [{bar}] score={state.score:3d}  alive={alive:3d}", end="")
+        for ev in evs:
+            t = ev.get("type","")
+            if   t == "radar_ping":           print(f"  📡{ev['radar_id']}", end="")
+            elif t == "missile_fired":
+                hit = "✓" if ev.get("hit") else "✗"
+                print(f"  🚀{hit}→{ev['target_drone_id']}", end="")
+            elif t == "radar_destroyed":      print(f"  💥R:{ev['radar_id']}+{ev['score_gained']}", end="")
+            elif t == "launcher_destroyed":   print(f"  💥L:{ev['launcher_id']}+{ev['score_gained']}", end="")
+            elif t == "gas_target_destroyed": print(f"  ☠G:{ev['target_id']}+{ev['score_gained']}", end="")
+        print()
+        if delay > 0: time.sleep(delay)
+    rk = sum(1 for r in state.radars            if r.destroyed)
+    lk = sum(1 for l in state.missile_launchers if l.destroyed)
+    gk = sum(1 for g in state.gas_targets        if g.destroyed)
+    ms = sum(1 for e in state.events if e.get("type")=="missile_fired")
+    print(f"\n  FINAL score={state.score}  R={rk}/{DEFAULT_NUM_RADARS}  "
+          f"L={lk}/{DEFAULT_NUM_LAUNCHERS}  G={gk}/{DEFAULT_NUM_GAS}  msls_fired={ms}\n")
+
+
+def print_results(results, num_bait, num_recv, trials):
+    ranked = sorted(results, key=lambda r: r.avg, reverse=True)
+    W = 138
+    print(f"\n{'='*W}")
+    print(f"  D3AS PATTERN LAB v2 — RESULTS")
+    print(f"  Config: {num_bait}b + {num_recv}r drones  |  {trials} trials each")
+    print(f"  Max possible: {MAX_POSSIBLE_SCORE}  "
+          f"(R:{DEFAULT_NUM_RADARS}x{RADAR_VALUE}={DEFAULT_NUM_RADARS*RADAR_VALUE}  "
+          f"L:{DEFAULT_NUM_LAUNCHERS}x{MISSILE_VALUE}={DEFAULT_NUM_LAUNCHERS*MISSILE_VALUE}  "
+          f"G:{DEFAULT_NUM_GAS}x{GAS_VALUE}={DEFAULT_NUM_GAS*GAS_VALUE})  "
+          f"|  SAMs: {SAM_MISSILES}/launcher  {MISSILE_HIT_RATE*100:.0f}% hit  "
+          f"|  Radar on: 5/{30} ticks")
+    print(f"{'='*W}")
+    print(f"\n  {'#':<3} {'Algorithm':<22} {'Mission':<24} "
+          f"{'Avg':>6} {'SD':>5} {'Best':>5} {'Worst':>5} "
+          f"{'Radars':>8} {'Launchs':>8} {'Gas':>6} {'Surv':>6} "
+          f"{'Msls':>5}  {'Pct':>5}  Bar")
+    print(f"  {'─'*W}")
+    for rank, r in enumerate(ranked, 1):
+        pct = r.avg / MAX_POSSIBLE_SCORE * 100
+        bar = "█"*int(pct/4) + "░"*(25-int(pct/4))
+        tag = "  <- BEST" if rank==1 else ("  ^ TOP3" if rank<=3 else "")
+        print(f"  {rank:<3} {r.algo.name:<22} {r.algo.mission:<24} "
+              f"{r.avg:6.1f} {r.sd:5.1f} {r.best:5d} {r.worst:5d} "
+              f"{r.avg_radars:5.1f}/{DEFAULT_NUM_RADARS} "
+              f"{r.avg_launchers:5.1f}/{DEFAULT_NUM_LAUNCHERS} "
+              f"{r.avg_gas:3.1f}/{DEFAULT_NUM_GAS} "
+              f"{r.avg_survival*100:5.0f}% "
+              f"{r.avg_msls:5.1f}  {pct:5.1f}%  {bar}{tag}")
+    print(f"\n  {'─'*W}")
+    print("  TOP 3 DOCTRINE NOTES:")
+    for i, r in enumerate(ranked[:3]):
+        a = r.algo
+        print(f"  {'*' if i==0 else '-'} {a.name:<22}  str: {a.strength:<24}  "
+              f"weak: {a.weakness:<26}  best vs: {a.best_against}")
+    print(f"{'='*W}\n")
+
+
+def main():
+    p = argparse.ArgumentParser(description="D3AS Pattern Lab v2")
+    p.add_argument("--bait",    type=int,   default=DEFAULT_BAIT)
+    p.add_argument("--recv",    type=int,   default=DEFAULT_RECV)
+    p.add_argument("--trials",  type=int,   default=50)
+    p.add_argument("--algo",    type=int,   nargs="+")
+    p.add_argument("--preview", type=int,   default=None)
+    p.add_argument("--delay",   type=float, default=0.06)
+    p.add_argument("--verbose", action="store_true")
+    p.add_argument("--list",    action="store_true")
+    args = p.parse_args()
+
+    if args.list:
+        print(f"\n  {'ID':<4} {'Algorithm':<22} {'Mission':<24} {'Logic':<34} {'Best Against'}")
+        for a in ALGORITHMS:
+            print(f"  {a.id:<4} {a.name:<22} {a.mission:<24} {a.logic:<34} {a.best_against}")
+        return
+
+    if args.preview is not None:
+        match = [a for a in ALGORITHMS if a.id == args.preview]
+        if not match: print(f"ID {args.preview} not found."); sys.exit(1)
+        preview_run(match[0], args.bait, args.recv, delay=args.delay)
+        return
+
+    pool = ALGORITHMS if not args.algo else [a for a in ALGORITHMS if a.id in args.algo]
+    if not pool: print("No matching IDs."); sys.exit(1)
+
+    print(f"\n  D3AS v2  |  {args.bait}b+{args.recv}r  |  {args.trials} trials each")
+    print(f"  Running {len(pool)} algorithm(s)...\n")
+
+    results = []
+    for a in pool:
+        print(f"  [{a.id:2d}] {a.name:<22} ...", end="", flush=True)
+        if args.verbose: print()
+        t0 = time.time()
+        r = run_trials(a, args.bait, args.recv, args.trials, args.verbose)
+        results.append(r)
+        print(f"  avg={r.avg:.1f}  best={r.best}  ({time.time()-t0:.1f}s)")
+
+    print_results(results, args.bait, args.recv, args.trials)
+
+if __name__ == "__main__":
+    main()
