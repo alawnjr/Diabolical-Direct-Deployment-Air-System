@@ -448,7 +448,7 @@ export default function AssetPalette({
             ADVERSARY LEGEND
           </div>
           {[
-            { color: '#ffab00', shape: '◆', label: 'EWR / Radar', sub: '100 NM detect, drifts' },
+            { color: '#ffab00', shape: '◆', label: 'EWR / Radar', sub: 'Detect drones, send signal to launcher' },
             { color: '#ff1744', shape: '▲', label: 'SAM Launcher', sub: 'Radar-cued, 2 missiles, hidden' },
             { color: '#ff9800', shape: '■', label: 'Fuel / Supply', sub: 'Strike target' },
           ].map(({ color, shape, label, sub }) => (
