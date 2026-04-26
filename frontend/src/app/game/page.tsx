@@ -9,6 +9,7 @@ import TacticalMap from '@/components/TacticalMap';
 import MissionLog from '@/components/MissionLog';
 import BDAPanel from '@/components/BDAPanel';
 import AlgorithmDocs from '@/components/AlgorithmDocs';
+import DefenseAlgorithmDocs from '@/components/DefenseAlgorithmDocs';
 
 export default function GamePage() {
   const [phase, setPhase] = useState<GamePhase>('PLANNING');
@@ -22,7 +23,9 @@ export default function GamePage() {
   const [numLaunchers, setNumLaunchers] = useState(6);
   const [numGas, setNumGas] = useState(4);
   const [algorithm, setAlgorithm] = useState('grid_sweep');
+  const [defenseAlgorithm, setDefenseAlgorithm] = useState('random');
   const [showAlgoDocs, setShowAlgoDocs] = useState(false);
+  const [showDefenseAlgoDocs, setShowDefenseAlgoDocs] = useState(false);
   const [allEvents, setAllEvents] = useState<SimEvent[]>([]);
   const [activePings, setActivePings] = useState<PingEffect[]>([]);
   const [detectedDroneIds, setDetectedDroneIds] = useState<Set<string>>(new Set());
@@ -163,7 +166,7 @@ export default function GamePage() {
     setBackendError(null);
 
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm, defenseAlgorithm);
       setGameState(state);
       setPhase('READY');
     } catch (err) {
@@ -174,7 +177,7 @@ export default function GamePage() {
           : 'Failed to initialize simulation. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm, defenseAlgorithm]);
 
   const handleExecute = useCallback(() => {
     if (phase !== 'READY') return;
@@ -197,7 +200,7 @@ export default function GamePage() {
     setGameState(null);
     setBackendError(null);
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm, defenseAlgorithm);
       setGameState(state);
       setPhase('EXECUTION');
       setIsExecuting(true);
@@ -209,7 +212,7 @@ export default function GamePage() {
           : 'Failed to launch mission. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm, defenseAlgorithm]);
 
   // Execution loop
   useEffect(() => {
@@ -328,6 +331,7 @@ export default function GamePage() {
           numLaunchers={numLaunchers}
           numGas={numGas}
           algorithm={algorithm}
+          defenseAlgorithm={defenseAlgorithm}
           onNumBaitChange={setNumBait}
           onNumReceiverChange={setNumReceiver}
           onNumCameraChange={setNumCamera}
@@ -337,7 +341,9 @@ export default function GamePage() {
           onNumLaunchersChange={setNumLaunchers}
           onNumGasChange={setNumGas}
           onAlgorithmChange={setAlgorithm}
+          onDefenseAlgorithmChange={setDefenseAlgorithm}
           onShowAlgorithmDocs={() => setShowAlgoDocs(true)}
+          onShowDefenseAlgorithmDocs={() => setShowDefenseAlgoDocs(true)}
           onInitialize={handleInitialize}
           onLaunchAll={handleLaunchAll}
           onExecute={handleExecute}
@@ -475,6 +481,9 @@ export default function GamePage() {
 
       {/* Algorithm docs modal */}
       {showAlgoDocs && <AlgorithmDocs onClose={() => setShowAlgoDocs(false)} />}
+
+      {/* Defense algorithm docs modal */}
+      {showDefenseAlgoDocs && <DefenseAlgorithmDocs onClose={() => setShowDefenseAlgoDocs(false)} />}
 
       {/* COMPLETE overlay */}
       {phase === 'COMPLETE' && (

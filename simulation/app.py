@@ -67,6 +67,7 @@ from simulation import (
     run_simulation,
     run_to_completion,
     VALID_ALGORITHMS,
+    VALID_DEFENSE_ALGORITHMS,
 )
 
 app = Flask(__name__)
@@ -137,12 +138,16 @@ def start_sim():
     num_gas            = int(body.get("num_gas",       DEFAULT_NUM_GAS))
     num_camera         = int(body.get("num_camera",    DEFAULT_CAMERA))
     algorithm          = str(body.get("algorithm",      "grid_sweep"))
+    defense_algorithm  = str(body.get("defense_algorithm", "random"))
     if algorithm not in VALID_ALGORITHMS:
         algorithm = "grid_sweep"
+    if defense_algorithm not in VALID_DEFENSE_ALGORITHMS:
+        defense_algorithm = "random"
     try:
         _sim = initialize_sim(
             num_bait, num_receiver, radar_sight, missile_fire_range,
             num_radars, num_launchers, num_gas, num_camera, algorithm,
+            defense_algorithm,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

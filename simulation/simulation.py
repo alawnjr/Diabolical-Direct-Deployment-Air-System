@@ -58,6 +58,20 @@ VALID_ALGORITHMS = [
     "meta_selector",
 ]
 
+VALID_DEFENSE_ALGORITHMS = [
+    "random",
+    "perimeter_picket",
+    "corner_anchors",
+    "layered_rings",
+    "fortress_core",
+    "kill_channel",
+    "sam_forward_screen",
+    "magazine_wall",
+    "dispersed_ambush",
+    "staggered_emission_web",
+    "honeycomb_grid",
+]
+
 
 # ---------------------------------------------------------------------------
 # Entity dataclasses
@@ -124,6 +138,7 @@ class SimState:
     visited_coords: set[tuple[int, int]] = field(default_factory=set)
     algorithm: str = "grid_sweep"
     algorithm_state: dict[str, Any] = field(default_factory=dict)
+    defense_algorithm: str = "random"
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +172,18 @@ def _launcher_near_radar_xy(rx: float, ry: float) -> tuple[float, float]:
         if 5.0 <= x <= GRID_SIZE - 5.0 and 5.0 <= y <= GRID_SIZE - 5.0:
             return x, y
     return rx, ry  # fallback
+
+
+def _launcher_near_radar_xy_biased(rx: float, ry: float, preferred_angle: float) -> tuple[float, float]:
+    """Place launcher within SAM_PLACEMENT_RADIUS of radar, biased toward preferred_angle (±60°)."""
+    for _ in range(10_000):
+        a = preferred_angle + random.uniform(-math.pi / 3, math.pi / 3)
+        d = random.uniform(4.0, SAM_PLACEMENT_RADIUS)
+        x = rx + d * math.cos(a)
+        y = ry + d * math.sin(a)
+        if 5.0 <= x <= GRID_SIZE - 5.0 and 5.0 <= y <= GRID_SIZE - 5.0:
+            return x, y
+    return _launcher_near_radar_xy(rx, ry)
 
 
 def _radar_is_on(radar: Radar, tick: int) -> bool:
@@ -215,6 +242,230 @@ def create_random_map(
     }
 
 
+def _random_positions_avoiding(
+    n: int,
+    existing: list[tuple[float, float]],
+    margin: float = 10.0,
+    min_sep: float = 20.0,
+) -> list[tuple[float, float]]:
+    """Generate n random positions that maintain min_sep from all existing positions."""
+    positions: list[tuple[float, float]] = []
+    for _ in range(100_000):
+        if len(positions) == n:
+            break
+        x = random.uniform(margin, GRID_SIZE - margin)
+        y = random.uniform(margin, GRID_SIZE - margin)
+        all_taken = existing + positions
+        if all(_dist(x, y, px, py) >= min_sep for px, py in all_taken):
+            positions.append((x, y))
+    return positions
+
+
+def _defense_radar_positions(algorithm: str, num_radars: int) -> list[tuple[float, float]]:
+    """
+    Return deterministic radar positions for a named defense initialization algorithm.
+    All returned positions are clamped within [12, 188] on both axes.
+    """
+    if num_radars <= 0:
+        return []
+
+    cx, cy = GRID_SIZE / 2, GRID_SIZE / 2   # 100, 100
+    m = 12.0  # edge margin
+
+    def clamp(v: float) -> float:
+        return max(m, min(GRID_SIZE - m, v))
+
+    if algorithm == "perimeter_picket":
+        # Radars evenly distributed on a circle at 80 mi from center
+        r = 80.0
+        return [
+            (clamp(cx + r * math.cos(2 * math.pi * i / num_radars)),
+             clamp(cy + r * math.sin(2 * math.pi * i / num_radars)))
+            for i in range(num_radars)
+        ]
+
+    elif algorithm == "corner_anchors":
+        # 4 map corners, then center, then edge midpoints
+        pool = [
+            (m, m),
+            (GRID_SIZE - m, m),
+            (m, GRID_SIZE - m),
+            (GRID_SIZE - m, GRID_SIZE - m),
+            (cx, cy),
+            (cx, m),
+            (cx, GRID_SIZE - m),
+            (m, cy),
+            (GRID_SIZE - m, cy),
+        ]
+        return pool[:num_radars]
+
+    elif algorithm == "layered_rings":
+        # Outer ring at 75 mi radius, inner ring at 22 mi radius
+        outer_n = max(1, num_radars // 2)
+        inner_n = num_radars - outer_n
+        outer_r = min(75.0, GRID_SIZE / 2 - m)
+        inner_r = 22.0
+        positions: list[tuple[float, float]] = []
+        for i in range(outer_n):
+            a = 2 * math.pi * i / outer_n
+            positions.append((clamp(cx + outer_r * math.cos(a)), clamp(cy + outer_r * math.sin(a))))
+        for i in range(inner_n):
+            offset = math.pi / inner_n if inner_n > 0 else 0
+            a = 2 * math.pi * i / inner_n + offset
+            positions.append((cx + inner_r * math.cos(a), cy + inner_r * math.sin(a)))
+        return positions
+
+    elif algorithm == "fortress_core":
+        # All radars clustered within 14 mi of map center
+        if num_radars == 1:
+            return [(cx, cy)]
+        r = 14.0
+        return [
+            (cx + r * math.cos(2 * math.pi * i / num_radars),
+             cy + r * math.sin(2 * math.pi * i / num_radars))
+            for i in range(num_radars)
+        ]
+
+    elif algorithm == "kill_channel":
+        # Dense column along the 45° NE axis from origin
+        ax = math.cos(math.pi / 4)
+        ay = math.sin(math.pi / 4)
+        t0, t1 = 30.0, 155.0
+        positions = []
+        for i in range(num_radars):
+            t = t0 + (t1 - t0) * i / max(num_radars - 1, 1) if num_radars > 1 else (t0 + t1) / 2
+            positions.append((clamp(t * ax), clamp(t * ay)))
+        return positions
+
+    elif algorithm == "sam_forward_screen":
+        # Forward radars near NE edge; rear radars in the SW interior
+        fwd_n = max(1, num_radars // 2)
+        rear_n = num_radars - fwd_n
+        positions = []
+        for i in range(fwd_n):
+            t = i / max(fwd_n - 1, 1) if fwd_n > 1 else 0.5
+            positions.append((clamp(130 + t * 55), clamp(175 - t * 55)))
+        for i in range(rear_n):
+            t = i / max(rear_n - 1, 1) if rear_n > 1 else 0.5
+            positions.append((clamp(22 + t * 55), clamp(22 + t * 55)))
+        return positions
+
+    elif algorithm == "magazine_wall":
+        # Cluster all radars around 2–3 hub positions for dense SAM packing
+        num_hubs = min(3, num_radars)
+        hubs = [(60.0, 100.0), (140.0, 100.0), (100.0, 155.0)][:num_hubs]
+        slots = math.ceil((num_radars - num_hubs) / max(num_hubs, 1)) if num_radars > num_hubs else 1
+        positions = []
+        for i in range(num_radars):
+            hx, hy = hubs[i % num_hubs]
+            extra_idx = i // num_hubs
+            if extra_idx == 0:
+                positions.append((hx, hy))
+            else:
+                a = 2 * math.pi * (extra_idx - 1) / max(slots, 1)
+                d = 6.0
+                positions.append((clamp(hx + d * math.cos(a)), clamp(hy + d * math.sin(a))))
+        return positions
+
+    elif algorithm in ("dispersed_ambush", "staggered_emission_web"):
+        # Maximum-spread uniform grid — timing offsets for staggered_emission_web set separately
+        cols = math.ceil(math.sqrt(num_radars))
+        rows = math.ceil(num_radars / cols)
+        sx = (GRID_SIZE - 2 * m) / cols
+        sy = (GRID_SIZE - 2 * m) / rows
+        return [
+            (m + sx * (c + 0.5), m + sy * (r + 0.5))
+            for r in range(rows) for c in range(cols)
+        ][:num_radars]
+
+    elif algorithm == "honeycomb_grid":
+        # Radars at vertices of a hexagon (radius 57 mi) centered on the map,
+        # then the center, then inner ring at half-radius
+        hex_r = 57.0
+        positions = [
+            (clamp(cx + hex_r * math.cos(k * math.pi / 3)),
+             clamp(cy + hex_r * math.sin(k * math.pi / 3)))
+            for k in range(6)
+        ]
+        positions.append((cx, cy))
+        half_r = hex_r * 0.5
+        for k in range(6):
+            a = (k + 0.5) * math.pi / 3
+            positions.append((clamp(cx + half_r * math.cos(a)), clamp(cy + half_r * math.sin(a))))
+        return positions[:num_radars]
+
+    # Fallback (should not reach here for valid algorithms)
+    return _random_positions(num_radars)
+
+
+def _launcher_preferred_angle(algorithm: str, rx: float, ry: float) -> Optional[float]:
+    """
+    Return a preferred placement angle (radians) for a launcher near (rx, ry),
+    or None to use fully random placement.
+    """
+    cx, cy = GRID_SIZE / 2, GRID_SIZE / 2
+    if algorithm == "perimeter_picket":
+        return math.atan2(cy - ry, cx - rx)  # toward map center
+    if algorithm == "fortress_core":
+        return math.atan2(ry - cy, rx - cx)  # outward from center
+    if algorithm == "kill_channel":
+        return math.pi / 4                   # along the NE axis
+    if algorithm == "sam_forward_screen" and rx + ry > 250:
+        return math.atan2(cy - ry, cx - rx)  # forward launchers face inward
+    return None
+
+
+def create_algorithmic_map(
+    defense_algorithm: str,
+    num_radars: int,
+    num_launchers: int,
+    num_gas: int,
+) -> Optional[dict[str, Any]]:
+    """
+    Generate a map using a specific defense initialization algorithm.
+
+    Returns a dict with 'radars', 'launchers', 'gas' position lists and,
+    for staggered_emission_web, an optional 'power_offsets' list.
+    Returns None if placement fails.
+    """
+    if num_radars < 0 or num_launchers < 0 or num_gas < 0:
+        return None
+    if num_launchers > 0 and num_radars == 0:
+        return None
+
+    radar_positions = _defense_radar_positions(defense_algorithm, num_radars)
+    if len(radar_positions) < num_radars:
+        return None
+
+    launcher_positions: list[tuple[float, float]] = []
+    for i in range(num_launchers):
+        rx, ry = radar_positions[i % num_radars] if num_radars > 0 else (0.0, 0.0)
+        pref = _launcher_preferred_angle(defense_algorithm, rx, ry)
+        if pref is not None:
+            launcher_positions.append(_launcher_near_radar_xy_biased(rx, ry, pref))
+        else:
+            launcher_positions.append(_launcher_near_radar_xy(rx, ry))
+
+    gas_positions = _random_positions_avoiding(num_gas, radar_positions)
+    if len(gas_positions) < num_gas:
+        return None
+
+    result: dict[str, Any] = {
+        "radars": radar_positions,
+        "launchers": launcher_positions,
+        "gas": gas_positions,
+    }
+
+    # Staggered emission web: evenly-spaced deterministic power offsets
+    if defense_algorithm == "staggered_emission_web" and num_radars > 0:
+        result["power_offsets"] = [
+            int(i * RADAR_CYCLE / num_radars) % RADAR_CYCLE
+            for i in range(num_radars)
+        ]
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
@@ -229,6 +480,7 @@ def initialize_sim(
     num_gas: int = DEFAULT_NUM_GAS,
     num_camera: int = DEFAULT_CAMERA,
     algorithm: str = "grid_sweep",
+    defense_algorithm: str = "random",
 ) -> SimState:
     """
     Create and return a fresh SimState.
@@ -237,21 +489,30 @@ def initialize_sim(
     All drones launch from (0, 0) — the SW corner — and fan out in unique directions
     spanning a 90° arc across the NE quadrant.
     """
-    map_data = create_random_map(num_radars, num_launchers, num_gas)
+    algo = algorithm if algorithm in VALID_ALGORITHMS else "grid_sweep"
+    def_algo = defense_algorithm if defense_algorithm in VALID_DEFENSE_ALGORITHMS else "random"
+
+    if def_algo == "random":
+        map_data = create_random_map(num_radars, num_launchers, num_gas)
+    else:
+        map_data = create_algorithmic_map(def_algo, num_radars, num_launchers, num_gas)
     if map_data is None:
         raise ValueError("can't generate one")
-
-    algo = algorithm if algorithm in VALID_ALGORITHMS else "grid_sweep"
 
     state = SimState(
         radar_sight=radar_sight,
         missile_fire_range=missile_fire_range,
         visited_coords={(0, 0)},
         algorithm=algo,
+        defense_algorithm=def_algo,
     )
 
+    power_offsets: Optional[list[int]] = map_data.get("power_offsets")  # type: ignore[assignment]
     state.radars = [
-        Radar(id=f"r{i+1}", x=x, y=y, power_offset=random.randint(0, 25))
+        Radar(
+            id=f"r{i+1}", x=x, y=y,
+            power_offset=power_offsets[i] if power_offsets else random.randint(0, 25),
+        )
         for i, (x, y) in enumerate(map_data["radars"])
     ]
 
@@ -985,6 +1246,7 @@ def get_public_state(state: SimState) -> dict[str, Any]:
         "score": state.score,
         "complete": state.complete,
         "algorithm": state.algorithm,
+        "defense_algorithm": state.defense_algorithm,
         "radar_sight": state.radar_sight,
         "missile_fire_range": state.missile_fire_range,
         "camera_drone_range": CAMERA_DRONE_RANGE,

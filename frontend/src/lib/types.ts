@@ -103,6 +103,7 @@ export interface GameState {
   score: number;
   complete: boolean;
   algorithm?: string;
+  defense_algorithm?: string;
   radar_sight: number;
   missile_fire_range: number;
   camera_drone_range?: number;

@@ -2,6 +2,20 @@
 
 import type { GamePhase, GameState } from '@/lib/types';
 
+const DEFENSE_ALGORITHM_OPTIONS = [
+  { value: 'random',                label: 'Random Placement' },
+  { value: 'perimeter_picket',      label: '01. Perimeter Picket' },
+  { value: 'corner_anchors',        label: '02. Corner Anchors' },
+  { value: 'layered_rings',         label: '03. Layered Rings' },
+  { value: 'fortress_core',         label: '04. Fortress Core' },
+  { value: 'kill_channel',          label: '05. Kill Channel' },
+  { value: 'sam_forward_screen',    label: '06. SAM Forward Screen' },
+  { value: 'magazine_wall',         label: '07. Magazine Wall' },
+  { value: 'dispersed_ambush',      label: '08. Dispersed Ambush' },
+  { value: 'staggered_emission_web',label: '09. Staggered Emission Web' },
+  { value: 'honeycomb_grid',        label: '10. Honeycomb Grid' },
+];
+
 const ALGORITHM_OPTIONS = [
   { value: 'grid_sweep',        label: '1. Grid Sweep' },
   { value: 'spiral_outward',    label: '2. Spiral Outward' },
@@ -28,6 +42,7 @@ interface AssetPaletteProps {
   numLaunchers: number;
   numGas: number;
   algorithm: string;
+  defenseAlgorithm: string;
   onNumBaitChange: (n: number) => void;
   onNumReceiverChange: (n: number) => void;
   onNumCameraChange: (n: number) => void;
@@ -37,7 +52,9 @@ interface AssetPaletteProps {
   onNumLaunchersChange: (n: number) => void;
   onNumGasChange: (n: number) => void;
   onAlgorithmChange: (algo: string) => void;
+  onDefenseAlgorithmChange: (algo: string) => void;
   onShowAlgorithmDocs: () => void;
+  onShowDefenseAlgorithmDocs: () => void;
   onInitialize: () => void;
   onLaunchAll: () => void;
   onExecute: () => void;
@@ -123,6 +140,7 @@ export default function AssetPalette({
   numLaunchers,
   numGas,
   algorithm,
+  defenseAlgorithm,
   onNumBaitChange,
   onNumReceiverChange,
   onNumCameraChange,
@@ -132,7 +150,9 @@ export default function AssetPalette({
   onNumLaunchersChange,
   onNumGasChange,
   onAlgorithmChange,
+  onDefenseAlgorithmChange,
   onShowAlgorithmDocs,
+  onShowDefenseAlgorithmDocs,
   onInitialize,
   onLaunchAll,
   onExecute,
@@ -263,6 +283,52 @@ const SPEED_OPTIONS = [
               }}
             >
               ? ALGORITHM TECHNIQUES
+            </button>
+          </div>
+        </div>
+
+        {/* Defense initialization algorithm */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            DEFENSE INITIALIZATION
+          </div>
+          <div style={{ border: '1px solid #1a2332', borderLeft: '3px solid #ff1744', background: '#0d1420', padding: '0.5rem 0.6rem' }}>
+            <select
+              value={defenseAlgorithm}
+              disabled={!isPlanning}
+              onChange={e => onDefenseAlgorithmChange(e.target.value)}
+              style={{
+                width: '100%',
+                background: '#0a0e14',
+                border: '1px solid #1a2332',
+                color: isPlanning ? '#c5cdd8' : '#556677',
+                fontSize: '0.62rem',
+                padding: '0.3rem 0.4rem',
+                fontFamily: 'inherit',
+                letterSpacing: '0.05em',
+                cursor: isPlanning ? 'pointer' : 'default',
+                marginBottom: '0.4rem',
+              }}
+            >
+              {DEFENSE_ALGORITHM_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={onShowDefenseAlgorithmDocs}
+              style={{
+                width: '100%',
+                background: 'none',
+                border: '1px solid #2a3a4e',
+                color: '#ff6b6b',
+                fontSize: '0.55rem',
+                padding: '0.25rem',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.1em',
+              }}
+            >
+              ? ALGORITHM REFERENCE
             </button>
           </div>
         </div>
@@ -442,6 +508,7 @@ const SPEED_OPTIONS = [
 
           {isExec && (
             <>
+
               <div role="group" aria-label="Playback speed">
                 <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.35rem' }}>
                   SPEED
