@@ -231,10 +231,13 @@ export default function GamePage() {
         const result = await tickSim(1);
         applyState(result.state);
         if (result.state.complete) {
+          phaseRef.current = 'COMPLETE'; // prevent in-flight interval ticks from re-entering
           setPhase('COMPLETE');
           setIsExecuting(false);
         }
-      } catch {
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('400')) return; // sim completed; in-flight tick raced — not an error
         stopExecution();
         setPhase('READY');
         setBackendError('Lost connection to the backend mid-execution. Check the Flask server and resume.');
