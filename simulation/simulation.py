@@ -79,8 +79,6 @@ class LucasDrone:
     angle: float = 0.0   # radians — fan-out heading assigned at init
     alive: bool = True
     miles_flown: float = 0.0
-    target_x: Optional[float] = None  # set when strike drone locks onto a radar
-    target_y: Optional[float] = None
 
 
 @dataclass
@@ -292,21 +290,35 @@ def _move_drone_direction(drone: LucasDrone, state: SimState) -> None:
     state.visited_coords.add((round(drone.x), round(drone.y)))
 
 
-def _move_drone_to_target(drone: LucasDrone) -> None:
-    """Steer a strike drone straight toward its locked radar position."""
+def _navigate_receiver_to_radar(drone: LucasDrone, state: SimState) -> None:
+    """Steer a receiver drone toward the closest revealed alive radar each tick.
+    Falls back to fan-out heading when no radar target is known yet."""
     remaining = MAX_FLIGHT - drone.miles_flown
-    if remaining <= 0 or drone.target_x is None or drone.target_y is None:
+    if remaining <= 0:
         return
-    dx = drone.target_x - drone.x
-    dy = drone.target_y - drone.y
+
+    alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
+    candidates = [
+        (rx, ry)
+        for rid, (rx, ry) in state.revealed_radar_positions.items()
+        if rid in alive_radar_ids
+    ]
+
+    if not candidates:
+        _move_drone_direction(drone, state)
+        return
+
+    tx, ty = min(candidates, key=lambda p: _dist(drone.x, drone.y, p[0], p[1]))
+    dx, dy = tx - drone.x, ty - drone.y
     d = math.sqrt(dx * dx + dy * dy)
     if d < 1e-6:
-        return
+        return  # Already on top of target — contact destruction handles it this tick
     step = min(DRONE_SPEED, d, remaining)
     ratio = step / d
     drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
     drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
     drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +353,8 @@ def advance_tick(state: SimState) -> list[dict]:
 
     # --- 1. Move drones ---
     for drone in alive_drones:
-        if drone.drone_type == "radar_receiver" and drone.target_x is not None:
-            _move_drone_to_target(drone)
+        if drone.drone_type == "radar_receiver":
+            _navigate_receiver_to_radar(drone, state)
         else:
             _move_drone_direction(drone, state)
 
