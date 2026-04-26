@@ -28,6 +28,7 @@ SAM_PLACEMENT_RADIUS = 10.0  # launchers placed within this distance of their ra
 
 GAS_VALUE = 1
 DESTROY_THRESHOLD = 3.0  # miles — distance at which a drone "hits" a target
+STRIKE_REACTION_RADIUS = 50.0  # miles — strike drones lock onto a radar that pings them within this range
 
 DEFAULT_NUM_RADARS = 6
 DEFAULT_NUM_LAUNCHERS = 6
@@ -78,6 +79,8 @@ class LucasDrone:
     angle: float = 0.0   # radians — fan-out heading assigned at init
     alive: bool = True
     miles_flown: float = 0.0
+    target_x: Optional[float] = None  # set when strike drone locks onto a radar
+    target_y: Optional[float] = None
 
 
 @dataclass
@@ -289,6 +292,23 @@ def _move_drone_direction(drone: LucasDrone, state: SimState) -> None:
     state.visited_coords.add((round(drone.x), round(drone.y)))
 
 
+def _move_drone_to_target(drone: LucasDrone) -> None:
+    """Steer a strike drone straight toward its locked radar position."""
+    remaining = MAX_FLIGHT - drone.miles_flown
+    if remaining <= 0 or drone.target_x is None or drone.target_y is None:
+        return
+    dx = drone.target_x - drone.x
+    dy = drone.target_y - drone.y
+    d = math.sqrt(dx * dx + dy * dy)
+    if d < 1e-6:
+        return
+    step = min(DRONE_SPEED, d, remaining)
+    ratio = step / d
+    drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
+    drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
+    drone.miles_flown += step
+
+
 # ---------------------------------------------------------------------------
 # Core simulation tick
 # ---------------------------------------------------------------------------
@@ -321,7 +341,10 @@ def advance_tick(state: SimState) -> list[dict]:
 
     # --- 1. Move drones ---
     for drone in alive_drones:
-        _move_drone_direction(drone, state)
+        if drone.drone_type == "radar_receiver" and drone.target_x is not None:
+            _move_drone_to_target(drone)
+        else:
+            _move_drone_direction(drone, state)
 
     # --- 2. Radar pings and SAM cuing ---
     alive_drones_now = [d for d in state.lucas_drones if d.alive]
@@ -350,6 +373,13 @@ def advance_tick(state: SimState) -> list[dict]:
             }
             tick_events.append(ev)
             state.events.append(ev)
+
+            # Strike drones pinged within reaction radius lock onto this radar
+            for d in drones_in_sight:
+                if (d.drone_type == "radar_receiver"
+                        and _dist(radar.x, radar.y, d.x, d.y) <= STRIKE_REACTION_RADIUS):
+                    d.target_x = radar.x
+                    d.target_y = radar.y
 
         if triggered:
             armed = [
