@@ -442,22 +442,33 @@ const SPEED_OPTIONS = [
 
           {isExec && (
             <>
-              <div style={{ display: 'flex', gap: '0.25rem' }}>
-                {SPEED_OPTIONS.map(s => (
-                  <button
-                    key={s.ms}
-                    className="btn-tac"
-                    onClick={() => onSpeedChange(s.ms)}
-                    style={{
-                      flex: 1,
-                      color: tickSpeed === s.ms ? '#ffab00' : undefined,
-                      border: tickSpeed === s.ms ? '1px solid #ffab00' : undefined,
-                      opacity: tickSpeed === s.ms ? 1 : 0.5,
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+              <div role="group" aria-label="Playback speed">
+                <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.35rem' }}>
+                  SPEED
+                </div>
+                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                  {SPEED_OPTIONS.map(s => {
+                    const active = tickSpeed === s.ms;
+                    return (
+                      <button
+                        key={s.ms}
+                        className="btn-tac"
+                        onClick={() => onSpeedChange(s.ms)}
+                        aria-pressed={active}
+                        aria-label={`${s.label} speed`}
+                        title={`${s.label} speed`}
+                        style={{
+                          flex: 1,
+                          background: active ? '#ffab00' : 'transparent',
+                          color: active ? '#000' : '#556677',
+                          borderColor: active ? '#ffab00' : '#2a3a4e',
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <button className="btn-tac btn-accent" onClick={onFullRun} disabled={isExecuting} style={{ width: '100%' }}>
                 ⚡ FULL RUN
