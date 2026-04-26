@@ -443,7 +443,7 @@ export default function TacticalMap({
             key={`cam-ring-${d.id}`}
             style={{
               transform: `translate(${tx(d.x)}px, ${ty(d.y)}px)`,
-              transition: 'transform 540ms linear',
+              transition: 'transform 600ms linear',
             }}
           >
             <circle
@@ -462,7 +462,7 @@ export default function TacticalMap({
             className={detectedDroneIds.has(d.id) ? 'drone-detected' : undefined}
             style={{
               transform: `translate(${tx(d.x)}px, ${ty(d.y)}px)`,
-              transition: d.alive ? 'transform 540ms linear' : 'none',
+              transition: d.alive ? 'transform 600ms linear' : 'none',
               cursor: d.type === 'camera' && d.alive ? 'pointer' : 'default',
             }}
             onClick={d.type === 'camera' && d.alive && onCameraToggle ? () => onCameraToggle(d.id) : undefined}

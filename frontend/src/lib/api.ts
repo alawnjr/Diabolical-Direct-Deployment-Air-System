@@ -20,7 +20,7 @@ export async function healthCheck(): Promise<boolean> {
 export async function startSim(
   numBait = 10,
   numReceiver = 10,
-  radarSight = 100,
+  radarSight = 50,
   samRange = 25,
   numRadars = 6,
   numLaunchers = 6,

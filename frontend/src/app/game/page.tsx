@@ -15,7 +15,7 @@ export default function GamePage() {
   const [numBait, setNumBait] = useState(8);
   const [numReceiver, setNumReceiver] = useState(8);
   const [numCamera, setNumCamera] = useState(4);
-  const [radarRange, setRadarRange] = useState(100);
+  const [radarRange, setRadarRange] = useState(50);
   const [samRange, setSamRange] = useState(25);
   const [numRadars, setNumRadars] = useState(6);
   const [numLaunchers, setNumLaunchers] = useState(6);

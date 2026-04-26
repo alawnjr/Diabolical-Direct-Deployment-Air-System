@@ -3,7 +3,7 @@ export const FEBA_X_NM = 80;
 export const SVG_SIZE = 600;
 export const NM_TO_PX = SVG_SIZE / MAP_NM; // 3 px per NM
 
-export const RADAR_SIGHT_NM = 100;
+export const RADAR_SIGHT_NM = 50;
 export const MISSILE_FIRE_RANGE_NM = 25;
 export const DESTROY_THRESHOLD_NM = 3;
 

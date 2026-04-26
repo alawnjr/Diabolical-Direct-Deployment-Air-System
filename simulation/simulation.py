@@ -15,7 +15,7 @@ DRONE_SPEED = 5.0        # miles/tick for radar_receiver drones (~300 mph)
 BAIT_DRONE_SPEED = 200.0 / 60.0  # miles/tick for bait drones (~3.33 mi/tick = 200 mph)
 MAX_FLIGHT = 300.0       # miles per drone over full mission
 
-RADAR_SIGHT = 100.0      # miles — default radar detection radius
+RADAR_SIGHT = 50.0       # miles — default radar detection radius
 RADAR_CYCLE = 30         # ticks per on/off cycle (30 min on/off period)
 RADAR_ON_DURATION = 5    # ticks the radar stays active per cycle (5-min window)
 RADAR_VALUE = 4
