@@ -1,7 +1,7 @@
 # D³AS — Data Driven Distributed Autonomous Systems
-**SCSP HACKATHON 2026**
-**Team name**: D3AS_Tools
-**Track**: Wargaming
+**SCSP HACKATHON 2026**\
+**Team name**: D3AS_Tools\
+**Track**: Wargaming\
  Built for the SCSP Hackathon 2026 · Wargaming Track.
 
 ---
