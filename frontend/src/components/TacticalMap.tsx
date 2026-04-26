@@ -235,14 +235,12 @@ export default function TacticalMap({
   const gasTargets = entities?.gas_targets ?? [];
   const drones = entities?.lucas_drones ?? [];
 
-  const visibleRadars = showDetected
-    ? radars.filter(r => r.revealed)
-    : radars;
+  const visibleRadars = radars.filter(r => r.x !== undefined && (!showDetected || r.revealed));
 
   // Launchers always have coordinates — show all of them
   const visibleLaunchers = launchers;
 
-  const visibleGas = gasTargets;
+  const visibleGas = gasTargets.filter(t => t.x !== undefined && (!showDetected || t.revealed));
 
   return (
     <div
