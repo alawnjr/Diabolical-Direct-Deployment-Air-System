@@ -16,7 +16,8 @@ BAIT_DRONE_SPEED = 200.0 / 60.0  # miles/tick for bait drones (~3.33 mi/tick = 2
 MAX_FLIGHT = 300.0       # miles per drone over full mission
 
 RADAR_SIGHT = 100.0      # miles — default radar detection radius
-RADAR_PING_INTERVAL = 90 # ticks — periodic blind ping regardless of LUCAS proximity
+RADAR_CYCLE = 30         # ticks per on/off cycle (30 min on/off period)
+RADAR_ON_DURATION = 5    # ticks the radar stays active per cycle (5-min window)
 RADAR_VALUE = 4
 
 SAM_MISSILES = 2             # starting missiles per launcher
@@ -46,6 +47,7 @@ class Radar:
     y: float
     revealed: bool = False
     destroyed: bool = False
+    power_offset: int = 0  # tick when this radar first turns on (0–25)
 
 
 @dataclass
@@ -129,6 +131,16 @@ def _launcher_near_radar_xy(rx: float, ry: float) -> tuple[float, float]:
     return rx, ry  # fallback
 
 
+def _radar_is_on(radar: Radar, tick: int) -> bool:
+    elapsed = tick - radar.power_offset
+    return elapsed >= 0 and (elapsed % RADAR_CYCLE) < RADAR_ON_DURATION
+
+
+def _radar_just_turned_on(radar: Radar, tick: int) -> bool:
+    elapsed = tick - radar.power_offset
+    return elapsed >= 0 and (elapsed % RADAR_CYCLE) == 0
+
+
 # ---------------------------------------------------------------------------
 # Map generation
 # ---------------------------------------------------------------------------
@@ -206,7 +218,7 @@ def initialize_sim(
     )
 
     state.radars = [
-        Radar(id=f"r{i+1}", x=x, y=y)
+        Radar(id=f"r{i+1}", x=x, y=y, power_offset=random.randint(0, 25))
         for i, (x, y) in enumerate(map_data["radars"])
     ]
 
@@ -313,16 +325,19 @@ def advance_tick(state: SimState) -> list[dict]:
 
     # --- 2. Radar pings and SAM cuing ---
     alive_drones_now = [d for d in state.lucas_drones if d.alive]
-    periodic = (state.tick % RADAR_PING_INTERVAL == 0)
 
     for radar in alive_radars:
+        if not _radar_is_on(radar, state.tick):
+            continue
+
         drones_in_sight = [
             d for d in alive_drones_now
             if _dist(radar.x, radar.y, d.x, d.y) <= state.radar_sight
         ]
         triggered = len(drones_in_sight) > 0
+        just_turned_on = _radar_just_turned_on(radar, state.tick)
 
-        if periodic or triggered:
+        if just_turned_on or triggered:
             radar.revealed = True
             state.revealed_radar_positions[radar.id] = (radar.x, radar.y)
             ev: dict = {
@@ -336,38 +351,38 @@ def advance_tick(state: SimState) -> list[dict]:
             tick_events.append(ev)
             state.events.append(ev)
 
-            if triggered:
-                armed = [
-                    ml for ml in alive_launchers
-                    if ml.radar_id == radar.id and ml.missiles_remaining > 0
+        if triggered:
+            armed = [
+                ml for ml in alive_launchers
+                if ml.radar_id == radar.id and ml.missiles_remaining > 0
+            ]
+            if armed:
+                launcher = armed[0]
+                in_sam_range = [
+                    d for d in drones_in_sight
+                    if _dist(launcher.x, launcher.y, d.x, d.y) <= state.missile_fire_range
                 ]
-                if armed:
-                    launcher = armed[0]
-                    in_sam_range = [
-                        d for d in drones_in_sight
-                        if _dist(launcher.x, launcher.y, d.x, d.y) <= state.missile_fire_range
-                    ]
-                    if in_sam_range:
-                        target_drone = min(
-                            in_sam_range,
-                            key=lambda d: _dist(launcher.x, launcher.y, d.x, d.y)
-                        )
-                        hit = random.random() < MISSILE_HIT_RATE
-                        if hit:
-                            target_drone.alive = False
-                        launcher.missiles_remaining -= 1
-                        missile_ev: dict = {
-                            "tick": state.tick,
-                            "type": "missile_fired",
-                            "launcher_id": launcher.id,
-                            "target_drone_id": target_drone.id,
-                            "launcher_x": round(launcher.x, 2),
-                            "launcher_y": round(launcher.y, 2),
-                            "hit": hit,
-                        }
-                        tick_events.append(missile_ev)
-                        state.events.append(missile_ev)
-                        alive_drones_now = [d for d in state.lucas_drones if d.alive]
+                if in_sam_range:
+                    target_drone = min(
+                        in_sam_range,
+                        key=lambda d: _dist(launcher.x, launcher.y, d.x, d.y)
+                    )
+                    hit = random.random() < MISSILE_HIT_RATE
+                    if hit:
+                        target_drone.alive = False
+                    launcher.missiles_remaining -= 1
+                    missile_ev: dict = {
+                        "tick": state.tick,
+                        "type": "missile_fired",
+                        "launcher_id": launcher.id,
+                        "target_drone_id": target_drone.id,
+                        "launcher_x": round(launcher.x, 2),
+                        "launcher_y": round(launcher.y, 2),
+                        "hit": hit,
+                    }
+                    tick_events.append(missile_ev)
+                    state.events.append(missile_ev)
+                    alive_drones_now = [d for d in state.lucas_drones if d.alive]
 
     # --- 3. Contact destructions ---
     surviving = [d for d in state.lucas_drones if d.alive]

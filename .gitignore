@@ -1,3 +1,4 @@
 **/__pycache__
 *.pyc
-simulation/.venv/
+venv/
+.venv
