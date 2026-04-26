@@ -508,23 +508,73 @@ export default function GamePage() {
                 display: 'flex',
                 gap: 16,
                 justifyContent: 'center',
-                marginBottom: '1.5rem',
+                marginBottom: '1rem',
                 fontSize: '0.65rem',
               }}
             >
               <div style={{ textAlign: 'center' }}>
                 <div style={{ color: '#76ff03', fontWeight: 700, fontSize: '1.4rem' }}>
                   {(gameState?.entities.radars.filter(r => r.destroyed).length ?? 0) +
+                    (gameState?.entities.missile_launchers.filter(ml => ml.destroyed).length ?? 0) +
                     (gameState?.entities.gas_targets.filter(t => t.destroyed).length ?? 0)}
+                  <span style={{ fontSize: '0.9rem', color: '#556677' }}>
+                    /{(gameState?.entities.radars.length ?? 0) +
+                      (gameState?.entities.missile_launchers.length ?? 0) +
+                      (gameState?.entities.gas_targets.length ?? 0)}
+                  </span>
                 </div>
                 <div style={{ color: '#556677' }}>TARGETS DESTROYED</div>
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ color: '#ff1744', fontWeight: 700, fontSize: '1.4rem' }}>
                   {(gameState?.drones_total ?? 0) - (gameState?.drones_alive ?? 0)}
+                  <span style={{ fontSize: '0.9rem', color: '#556677' }}>
+                    /{gameState?.drones_total ?? 0}
+                  </span>
                 </div>
                 <div style={{ color: '#556677' }}>DRONES LOST</div>
               </div>
+            </div>
+
+            {/* Per-type breakdown */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 8,
+                marginBottom: '1.5rem',
+                fontSize: '0.6rem',
+                borderTop: '1px solid #1a2332',
+                paddingTop: '0.75rem',
+              }}
+            >
+              {[
+                {
+                  label: 'RADARS',
+                  destroyed: gameState?.entities.radars.filter(r => r.destroyed).length ?? 0,
+                  total: gameState?.entities.radars.length ?? 0,
+                  color: '#ffab00',
+                },
+                {
+                  label: 'LAUNCHERS',
+                  destroyed: gameState?.entities.missile_launchers.filter(ml => ml.destroyed).length ?? 0,
+                  total: gameState?.entities.missile_launchers.length ?? 0,
+                  color: '#ff1744',
+                },
+                {
+                  label: 'FUEL TARGETS',
+                  destroyed: gameState?.entities.gas_targets.filter(t => t.destroyed).length ?? 0,
+                  total: gameState?.entities.gas_targets.length ?? 0,
+                  color: '#ff9800',
+                },
+              ].map(({ label, destroyed, total, color }) => (
+                <div key={label} style={{ textAlign: 'center' }}>
+                  <div style={{ color, fontWeight: 700, fontSize: '1.1rem' }}>
+                    {destroyed}<span style={{ fontSize: '0.75rem', color: '#556677' }}>/{total}</span>
+                  </div>
+                  <div style={{ color: '#556677', letterSpacing: '0.08em' }}>{label}</div>
+                </div>
+              ))}
             </div>
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
