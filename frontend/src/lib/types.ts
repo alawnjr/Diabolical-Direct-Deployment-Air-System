@@ -9,11 +9,10 @@ export interface RadarEntity {
 
 export interface MissileLauncherEntity {
   id: string;
-  revealed: boolean;
-  fired: boolean;
+  x: number;
+  y: number;
+  missiles_remaining: number;
   value: number;
-  x?: number;
-  y?: number;
 }
 
 export interface GasTargetEntity {
@@ -56,6 +55,7 @@ export interface MissileFiredEvent {
   target_drone_id: string;
   launcher_x: number;
   launcher_y: number;
+  hit?: boolean;
 }
 
 export interface RadarDestroyedEvent {
@@ -88,6 +88,8 @@ export interface GameState {
   tick: number;
   score: number;
   complete: boolean;
+  radar_sight: number;
+  missile_fire_range: number;
   drones_alive: number;
   drones_total: number;
   entities: SimEntities;

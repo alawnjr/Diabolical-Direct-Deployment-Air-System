@@ -6,9 +6,14 @@ interface AssetPaletteProps {
   phase: GamePhase;
   numBait: number;
   numReceiver: number;
+  radarRange: number;
+  samRange: number;
   onNumBaitChange: (n: number) => void;
   onNumReceiverChange: (n: number) => void;
+  onRadarRangeChange: (n: number) => void;
+  onSamRangeChange: (n: number) => void;
   onInitialize: () => void;
+  onLaunchAll: () => void;
   onExecute: () => void;
   onFullRun: () => void;
   onReset: () => void;
@@ -83,9 +88,14 @@ export default function AssetPalette({
   phase,
   numBait,
   numReceiver,
+  radarRange,
+  samRange,
   onNumBaitChange,
   onNumReceiverChange,
+  onRadarRangeChange,
+  onSamRangeChange,
   onInitialize,
+  onLaunchAll,
   onExecute,
   onFullRun,
   onReset,
@@ -135,8 +145,8 @@ export default function AssetPalette({
           <AssetCard
             color="#ffd600"
             icon="◆"
-            label="Shahed Decoy"
-            sublabel="Bait drone — triggers radar activation"
+            label="Bait LUCAS Drone"
+            sublabel="Fast bait drone (200 mph) — triggers SAM responses"
             count={numBait}
             onCountChange={onNumBaitChange}
             disabled={!isPlanning}
@@ -153,6 +163,38 @@ export default function AssetPalette({
           />
         </div>
 
+        {/* Threat parameters */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            THREAT PARAMETERS
+          </div>
+          {[
+            { label: 'Radar Range', color: '#ffab00', value: radarRange, min: 20, max: 200, step: 10, onChange: onRadarRangeChange, unit: 'NM' },
+            { label: 'SAM Range',   color: '#ff1744', value: samRange,   min: 5,  max: 100, step: 5,  onChange: onSamRangeChange,   unit: 'NM' },
+          ].map(({ label, color, value, min, max, step, onChange, unit }) => (
+            <div key={label} style={{ border: `1px solid #1a2332`, borderLeft: `3px solid ${color}`, background: '#0d1420', padding: '0.5rem 0.6rem', marginBottom: '0.4rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, color }}>{label}</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color, minWidth: 46, textAlign: 'right' }}>{value} {unit}</span>
+              </div>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                disabled={!isPlanning}
+                onChange={e => onChange(Number(e.target.value))}
+                style={{ opacity: isPlanning ? 1 : 0.35 }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.15rem' }}>
+                <span style={{ fontSize: '0.5rem', color: '#556677' }}>{min}</span>
+                <span style={{ fontSize: '0.5rem', color: '#556677' }}>{max}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Summary */}
         <div
           style={{
@@ -167,7 +209,7 @@ export default function AssetPalette({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
-              <span style={{ color: '#ffd600' }}>◆ Shahed Decoys</span>
+              <span style={{ color: '#ffd600' }}>◆ Bait LUCAS Drones</span>
               <span style={{ color: '#c5cdd8' }}>{numBait}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
@@ -182,7 +224,7 @@ export default function AssetPalette({
           </div>
         </div>
 
-        {/* Shahed loadout reminder */}
+        {/* Bait doctrine reminder */}
         {isPlanning && (
           <div
             style={{
@@ -195,9 +237,9 @@ export default function AssetPalette({
             }}
           >
             <div style={{ color: '#ffab00', marginBottom: '0.3rem', letterSpacing: '0.08em' }}>
-              ▸ SHAHED DOCTRINE
+              ▸ BAIT DRONE DOCTRINE
             </div>
-            <div>Decoys enter threat zones to force radar activation. LUCAS drones home on revealed emitters.</div>
+            <div>Bait drones fly fast (200 mph) into threat zones, depleting SAM missiles. LUCAS strike drones home on revealed radar emitters.</div>
           </div>
         )}
 
@@ -236,9 +278,14 @@ export default function AssetPalette({
         {/* Action buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {isPlanning && (
-            <button className="btn-tac btn-accent" onClick={onInitialize} style={{ width: '100%' }}>
-              ⬡ INITIALIZE MISSION
-            </button>
+            <>
+              <button className="btn-tac btn-primary" onClick={onLaunchAll} style={{ width: '100%' }}>
+                ▶ LAUNCH ALL
+              </button>
+              <button className="btn-tac btn-accent" onClick={onInitialize} style={{ width: '100%' }}>
+                ⬡ INITIALIZE ONLY
+              </button>
+            </>
           )}
 
           {isReady && (
@@ -271,8 +318,8 @@ export default function AssetPalette({
             ADVERSARY LEGEND
           </div>
           {[
-            { color: '#ffab00', shape: '◆', label: 'EWR / Radar', sub: '100 NM detect' },
-            { color: '#ff1744', shape: '▲', label: 'SAM Launcher', sub: '25 NM engage' },
+            { color: '#ffab00', shape: '◆', label: 'EWR / Radar', sub: '100 NM detect, drifts' },
+            { color: '#ff1744', shape: '▲', label: 'SAM Launcher', sub: 'Radar-cued, 2 missiles, hidden' },
             { color: '#ff9800', shape: '■', label: 'Fuel / Supply', sub: 'Strike target' },
           ].map(({ color, shape, label, sub }) => (
             <div

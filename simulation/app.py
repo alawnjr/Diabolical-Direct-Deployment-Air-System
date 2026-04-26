@@ -55,6 +55,8 @@ from flask_cors import CORS
 
 from simulation import (
     SimState,
+    RADAR_SIGHT,
+    MISSILE_FIRE_RANGE,
     advance_tick,
     get_public_state,
     initialize_sim,
@@ -120,10 +122,12 @@ def get_state():
 @app.route("/api/start", methods=["POST"])
 def start_sim():
     global _sim
-    body        = request.get_json(silent=True) or {}
-    num_bait    = int(body.get("num_bait",    10))
-    num_receiver= int(body.get("num_receiver",10))
-    _sim        = initialize_sim(num_bait, num_receiver)
+    body               = request.get_json(silent=True) or {}
+    num_bait           = int(body.get("num_bait",           10))
+    num_receiver       = int(body.get("num_receiver",       10))
+    radar_sight        = float(body.get("radar_sight",        RADAR_SIGHT))
+    missile_fire_range = float(body.get("missile_fire_range", MISSILE_FIRE_RANGE))
+    _sim = initialize_sim(num_bait, num_receiver, radar_sight, missile_fire_range)
     return jsonify(get_public_state(_sim))
 
 

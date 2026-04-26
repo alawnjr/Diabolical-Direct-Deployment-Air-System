@@ -9,21 +9,28 @@ import type {
 
 const GRID_SIZE = 200;
 const MAX_TICKS = 60;
-const DRONE_SPEED = 5.0;
+const DRONE_SPEED = 5.0;                      // miles/tick for radar_receiver (~300 mph)
+const BAIT_DRONE_SPEED = 200.0 / 60.0;        // miles/tick for bait drones (200 mph)
 const MAX_FLIGHT = 300.0;
-const RADAR_SIGHT = 100.0;
+const DEFAULT_RADAR_SIGHT = 100.0;
 const RADAR_PING_INTERVAL = 30;
-const MISSILE_FIRE_RANGE = 25.0;
+const RADAR_WANDER = 5.0;
+const SAM_MISSILES = 2;
+const MISSILE_HIT_RATE = 0.99;
+const DEFAULT_MISSILE_FIRE_RANGE = 25.0;
 const DESTROY_THRESHOLD = 3.0;
 const RADAR_VALUE = 4;
 const MISSILE_VALUE = 3;
 const GAS_VALUE = 1;
+const SAM_PLACEMENT_RADIUS = 10.0;
 
 interface IRadar {
-  id: string; x: number; y: number; revealed: boolean; destroyed: boolean;
+  id: string; x: number; y: number;
+  initial_x: number; initial_y: number;
+  revealed: boolean; destroyed: boolean;
 }
 interface ILauncher {
-  id: string; x: number; y: number; revealed: boolean; fired: boolean;
+  id: string; x: number; y: number; radar_id: string; missiles_remaining: number;
 }
 interface IGasTarget {
   id: string; x: number; y: number; revealed: boolean; destroyed: boolean;
@@ -37,6 +44,8 @@ export interface ISimState {
   tick: number;
   score: number;
   complete: boolean;
+  radar_sight: number;
+  missile_fire_range: number;
   radars: IRadar[];
   missile_launchers: ILauncher[];
   gas_targets: IGasTarget[];
@@ -63,15 +72,31 @@ function randomPositions(n: number, margin = 10, minSep = 20): [number, number][
   return pos;
 }
 
-export function initClientSim(numBait = 10, numReceiver = 10): ISimState {
-  const allPos = randomPositions(6 + 6 + 4);
+function launcherNearRadar(radar: IRadar): [number, number] {
+  for (let i = 0; i < 10_000; i++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const d = Math.random() * SAM_PLACEMENT_RADIUS;
+    const x = radar.x + d * Math.cos(angle);
+    const y = radar.y + d * Math.sin(angle);
+    if (x >= 5 && x <= GRID_SIZE - 5 && y >= 5 && y <= GRID_SIZE - 5) {
+      return [x, y];
+    }
+  }
+  return [radar.x, radar.y];
+}
+
+export function initClientSim(numBait = 10, numReceiver = 10, radarSight = DEFAULT_RADAR_SIGHT, missileFireRange = DEFAULT_MISSILE_FIRE_RANGE): ISimState {
+  const allPos = randomPositions(6 + 4); // 6 radars + 4 gas targets
   const radars: IRadar[] = allPos.slice(0, 6).map(([x, y], i) => ({
-    id: `r${i + 1}`, x, y, revealed: false, destroyed: false,
+    id: `r${i + 1}`, x, y, initial_x: x, initial_y: y, revealed: false, destroyed: false,
   }));
-  const missile_launchers: ILauncher[] = allPos.slice(6, 12).map(([x, y], i) => ({
-    id: `ml${i + 1}`, x, y, revealed: false, fired: false,
-  }));
-  const gas_targets: IGasTarget[] = allPos.slice(12).map(([x, y], i) => ({
+
+  const missile_launchers: ILauncher[] = radars.map((radar, i) => {
+    const [lx, ly] = launcherNearRadar(radar);
+    return { id: `ml${i + 1}`, x: lx, y: ly, radar_id: radar.id, missiles_remaining: SAM_MISSILES };
+  });
+
+  const gas_targets: IGasTarget[] = allPos.slice(6).map(([x, y], i) => ({
     id: `gt${i + 1}`, x, y, revealed: false, destroyed: false,
   }));
 
@@ -86,6 +111,7 @@ export function initClientSim(numBait = 10, numReceiver = 10): ISimState {
 
   return {
     tick: 0, score: 0, complete: false,
+    radar_sight: radarSight, missile_fire_range: missileFireRange,
     radars, missile_launchers, gas_targets, lucas_drones,
     events: [], revealed_radar_positions: {},
   };
@@ -93,12 +119,7 @@ export function initClientSim(numBait = 10, numReceiver = 10): ISimState {
 
 function droneTarget(drone: IDrone, state: ISimState): [number, number] {
   if (drone.type === 'bait') {
-    const revealed = state.radars.filter(r => r.revealed && !r.destroyed);
-    if (revealed.length > 0) {
-      const best = revealed.reduce((a, b) =>
-        dist(drone.x, drone.y, a.x, a.y) <= dist(drone.x, drone.y, b.x, b.y) ? a : b);
-      return [best.x, best.y];
-    }
+    // Bait drones cannot detect radar — target gas targets or map centre
     const aliveGas = state.gas_targets.filter(t => !t.destroyed);
     if (aliveGas.length > 0) {
       const best = aliveGas.reduce((a, b) =>
@@ -120,13 +141,13 @@ function droneTarget(drone: IDrone, state: ISimState): [number, number] {
   return [GRID_SIZE / 2, GRID_SIZE / 2];
 }
 
-function moveDrone(drone: IDrone, tx: number, ty: number): void {
+function moveDrone(drone: IDrone, tx: number, ty: number, speed: number): void {
   const remaining = MAX_FLIGHT - drone.miles_flown;
   if (remaining <= 0) return;
   const dx = tx - drone.x, dy = ty - drone.y;
   const d = Math.sqrt(dx * dx + dy * dy);
   if (d < 1e-6) return;
-  const step = Math.min(DRONE_SPEED, d, remaining);
+  const step = Math.min(speed, d, remaining);
   const ratio = step / d;
   drone.x = Math.max(0, Math.min(GRID_SIZE - 1, drone.x + dx * ratio));
   drone.y = Math.max(0, Math.min(GRID_SIZE - 1, drone.y + dy * ratio));
@@ -144,55 +165,83 @@ export function advanceClientTick(state: ISimState): SimEvent[] {
 
   const aliveDrones = state.lucas_drones.filter(d => d.alive);
   const aliveRadars = state.radars.filter(r => !r.destroyed);
-  const unfired = state.missile_launchers.filter(ml => !ml.fired);
   const aliveGas = state.gas_targets.filter(t => !t.destroyed);
 
-  for (const drone of aliveDrones) {
-    moveDrone(drone, ...droneTarget(drone, state));
+  // --- 0. Radar movement within 10×10-mile wander box ---
+  for (const radar of aliveRadars) {
+    const newX = radar.initial_x + (Math.random() * 2 - 1) * RADAR_WANDER;
+    const newY = radar.initial_y + (Math.random() * 2 - 1) * RADAR_WANDER;
+    radar.x = Math.max(0, Math.min(GRID_SIZE - 1, newX));
+    radar.y = Math.max(0, Math.min(GRID_SIZE - 1, newY));
   }
 
-  const aliveDronesNow = state.lucas_drones.filter(d => d.alive);
+  // --- 1. Move drones ---
+  for (const drone of aliveDrones) {
+    const speed = drone.type === 'bait' ? BAIT_DRONE_SPEED : DRONE_SPEED;
+    moveDrone(drone, ...droneTarget(drone, state), speed);
+  }
+
+  // --- 2. Radar pings and SAM cuing ---
+  let aliveDronesNow = state.lucas_drones.filter(d => d.alive);
   const periodic = state.tick % RADAR_PING_INTERVAL === 0;
+
   for (const radar of aliveRadars) {
-    const triggered = aliveDronesNow.some(d => dist(radar.x, radar.y, d.x, d.y) <= RADAR_SIGHT);
+    const dronesInSight = aliveDronesNow.filter(d =>
+      dist(radar.x, radar.y, d.x, d.y) <= state.radar_sight
+    );
+    const triggered = dronesInSight.length > 0;
+
     if (periodic || triggered) {
       radar.revealed = true;
       state.revealed_radar_positions[radar.id] = [radar.x, radar.y];
-      const ev: RadarPingEvent = {
+      const pingEv: RadarPingEvent = {
         tick: state.tick, type: 'radar_ping',
         radar_id: radar.id, x: round2(radar.x), y: round2(radar.y),
       };
-      tickEvents.push(ev);
-      state.events.push(ev);
+      tickEvents.push(pingEv);
+      state.events.push(pingEv);
+
+      if (triggered) {
+        const armed = state.missile_launchers.filter(
+          ml => ml.radar_id === radar.id && ml.missiles_remaining > 0
+        );
+        if (armed.length > 0) {
+          const launcher = armed[0];
+          const inSamRange = dronesInSight.filter(d =>
+            dist(launcher.x, launcher.y, d.x, d.y) <= state.missile_fire_range
+          );
+          if (inSamRange.length > 0) {
+            const targetDrone = inSamRange.reduce((a, b) =>
+              dist(launcher.x, launcher.y, a.x, a.y) <= dist(launcher.x, launcher.y, b.x, b.y) ? a : b
+            );
+            const hit = Math.random() < MISSILE_HIT_RATE;
+            if (hit) targetDrone.alive = false;
+            launcher.missiles_remaining--;
+            const missileEv: MissileFiredEvent = {
+              tick: state.tick, type: 'missile_fired',
+              launcher_id: launcher.id, target_drone_id: targetDrone.id,
+              launcher_x: round2(launcher.x), launcher_y: round2(launcher.y),
+              hit,
+            };
+            tickEvents.push(missileEv);
+            state.events.push(missileEv);
+            aliveDronesNow = state.lucas_drones.filter(d => d.alive);
+          }
+        }
+      }
     }
   }
 
-  let currentlyAlive = state.lucas_drones.filter(d => d.alive);
-  for (const launcher of unfired) {
-    const inRange = currentlyAlive.filter(d =>
-      dist(launcher.x, launcher.y, d.x, d.y) <= MISSILE_FIRE_RANGE);
-    if (inRange.length === 0) continue;
-    const victim = inRange.reduce((a, b) =>
-      dist(launcher.x, launcher.y, a.x, a.y) <= dist(launcher.x, launcher.y, b.x, b.y) ? a : b);
-    victim.alive = false;
-    launcher.fired = true;
-    launcher.revealed = true;
-    const ev: MissileFiredEvent = {
-      tick: state.tick, type: 'missile_fired',
-      launcher_id: launcher.id, target_drone_id: victim.id,
-      launcher_x: round2(launcher.x), launcher_y: round2(launcher.y),
-    };
-    tickEvents.push(ev);
-    state.events.push(ev);
-    currentlyAlive = state.lucas_drones.filter(d => d.alive);
-  }
-
+  // --- 3. Destructions — drones reaching targets explode on contact ---
   const surviving = state.lucas_drones.filter(d => d.alive);
   for (const drone of surviving) {
-    if (drone.type === 'radar_receiver') {
-      for (const radar of aliveRadars) {
-        if (radar.destroyed) continue;
-        if (dist(drone.x, drone.y, radar.x, radar.y) <= DESTROY_THRESHOLD) {
+    if (!drone.alive) continue;
+
+    // Radar contact: receiver destroys radar, all drones explode
+    for (const radar of aliveRadars) {
+      if (radar.destroyed) continue;
+      if (dist(drone.x, drone.y, radar.x, radar.y) <= DESTROY_THRESHOLD) {
+        if (drone.type === 'radar_receiver') {
           radar.destroyed = true;
           radar.revealed = true;
           state.score += RADAR_VALUE;
@@ -204,8 +253,14 @@ export function advanceClientTick(state: ISimState): SimEvent[] {
           tickEvents.push(ev);
           state.events.push(ev);
         }
+        drone.alive = false; // drone explodes on radar contact
+        break;
       }
     }
+
+    if (!drone.alive) continue;
+
+    // Gas target destruction
     for (const gas of aliveGas) {
       if (gas.destroyed) continue;
       if (dist(drone.x, drone.y, gas.x, gas.y) <= DESTROY_THRESHOLD) {
@@ -232,6 +287,8 @@ export function getPublicState(state: ISimState): GameState {
     tick: state.tick,
     score: state.score,
     complete: state.complete,
+    radar_sight: state.radar_sight,
+    missile_fire_range: state.missile_fire_range,
     drones_alive: state.lucas_drones.filter(d => d.alive).length,
     drones_total: state.lucas_drones.length,
     entities: {
@@ -240,8 +297,8 @@ export function getPublicState(state: ISimState): GameState {
         ...(r.revealed ? { x: round2(r.x), y: round2(r.y) } : {}),
       })),
       missile_launchers: state.missile_launchers.map(ml => ({
-        id: ml.id, revealed: ml.revealed, fired: ml.fired, value: MISSILE_VALUE,
-        ...(ml.revealed ? { x: round2(ml.x), y: round2(ml.y) } : {}),
+        id: ml.id, x: round2(ml.x), y: round2(ml.y),
+        missiles_remaining: ml.missiles_remaining, value: MISSILE_VALUE,
       })),
       gas_targets: state.gas_targets.map(t => ({
         id: t.id, revealed: t.revealed, destroyed: t.destroyed, value: GAS_VALUE,

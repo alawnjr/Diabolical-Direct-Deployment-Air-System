@@ -163,7 +163,7 @@ export default function TopBar({
                 ? '#ffab00'
                 : backendAvailable
                 ? '#76ff03'
-                : '#556677',
+                : '#ff1744',
             animation:
               backendAvailable === null ? 'blink 0.8s ease-in-out infinite' : 'none',
           }}
@@ -173,7 +173,7 @@ export default function TopBar({
             ? 'CHECKING'
             : backendAvailable
             ? 'BACKEND ONLINE'
-            : 'STANDALONE'}
+            : 'BACKEND OFFLINE'}
         </span>
       </div>
     </header>

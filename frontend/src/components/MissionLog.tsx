@@ -19,7 +19,7 @@ function classifyEvent(ev: SimEvent): { css: string; icon: string; message: stri
       return {
         css: 'threat-ev',
         icon: '🚀',
-        message: `T+${ev.tick} SAM LAUNCH — ${ev.launcher_id.toUpperCase()} → ${ev.target_drone_id.toUpperCase()}`,
+        message: `T+${ev.tick} SAM LAUNCH — ${ev.launcher_id.toUpperCase()} → ${ev.target_drone_id.toUpperCase()} [${ev.hit === false ? 'MISS' : 'HIT'}]`,
       };
     case 'radar_destroyed':
       return {

@@ -9,8 +9,10 @@ interface BDAPanelProps {
 export default function BDAPanel({ gameState }: BDAPanelProps) {
   const radarsTotal = gameState?.entities.radars.length ?? 6;
   const radarsDestroyed = gameState?.entities.radars.filter(r => r.destroyed).length ?? 0;
-  const launchersTotal = gameState?.entities.missile_launchers.length ?? 6;
-  const launchersRevealed = gameState?.entities.missile_launchers.filter(ml => ml.revealed).length ?? 0;
+  const missilesTotal = (gameState?.entities.missile_launchers.length ?? 6) * 2;
+  const missilesFired = gameState?.entities.missile_launchers.reduce(
+    (sum, ml) => sum + (2 - ml.missiles_remaining), 0
+  ) ?? 0;
   const gasTotal = gameState?.entities.gas_targets.length ?? 4;
   const gasDestroyed = gameState?.entities.gas_targets.filter(t => t.destroyed).length ?? 0;
   const targetsTotal = radarsTotal + gasTotal;
@@ -58,8 +60,8 @@ export default function BDAPanel({ gameState }: BDAPanelProps) {
               color: '#76ff03',
             },
             {
-              label: 'EMITTERS DETECTED',
-              value: `${launchersRevealed} / ${launchersTotal}`,
+              label: 'SAM MISSILES FIRED',
+              value: `${missilesFired} / ${missilesTotal}`,
               color: '#00e5ff',
             },
             {
@@ -103,9 +105,9 @@ export default function BDAPanel({ gameState }: BDAPanelProps) {
           MISSION DOCTRINE
         </div>
         {[
-          ['1', 'PLAN', 'Configure Shahed & LUCAS counts'],
+          ['1', 'PLAN', 'Configure Bait & LUCAS strike counts'],
           ['2', 'INIT', 'Generate adversary IADS scenario'],
-          ['3', 'EXEC', 'Run ticks — Shaheds bait, LUCAS attack'],
+          ['3', 'EXEC', 'Run ticks — bait drones deplete SAMs, LUCAS attack'],
           ['4', 'ASSESS', 'Review BDA, replay events, new scenario'],
         ].map(([num, step, desc]) => (
           <div key={step} style={{ display: 'flex', gap: 6, marginBottom: '0.25rem', fontSize: '0.57rem' }}>

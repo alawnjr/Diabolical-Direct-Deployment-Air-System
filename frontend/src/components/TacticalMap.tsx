@@ -14,6 +14,7 @@ interface TacticalMapProps {
   activePings: PingEffect[];
   showThreatRings: boolean;
   showDetected: boolean;
+  onToggleThreatRings: () => void;
 }
 
 function GridLines() {
@@ -156,13 +157,13 @@ function RadarIcon({
 function LauncherIcon({
   cx,
   cy,
-  fired,
+  missilesRemaining,
 }: {
   cx: number;
   cy: number;
-  fired: boolean;
+  missilesRemaining: number;
 }) {
-  if (fired) {
+  if (missilesRemaining === 0) {
     return (
       <g>
         <line x1={cx - 6} y1={cy - 6} x2={cx + 6} y2={cy + 6} stroke="#ff1744" strokeWidth={2} opacity={0.6} />
@@ -204,30 +205,29 @@ export default function TacticalMap({
   activePings,
   showThreatRings,
   showDetected,
+  onToggleThreatRings,
 }: TacticalMapProps) {
   const entities = gameState?.entities;
 
   const febaX = tx(FEBA_X_NM);
-  const radarRingR = RADAR_SIGHT_NM * NM;
-  const samRingR = MISSILE_FIRE_RANGE_NM * NM;
+  const radarRingR = (gameState?.radar_sight ?? RADAR_SIGHT_NM) * NM;
+  const samRingR = (gameState?.missile_fire_range ?? MISSILE_FIRE_RANGE_NM) * NM;
 
-  // Only show entities that are revealed (or all, depending on toggle)
   const radars = entities?.radars ?? [];
   const launchers = entities?.missile_launchers ?? [];
   const gasTargets = entities?.gas_targets ?? [];
   const drones = entities?.lucas_drones ?? [];
 
   const visibleRadars = showDetected
-    ? radars.filter(r => r.revealed && r.x !== undefined)
-    : radars.filter(r => r.x !== undefined);
+    ? radars.filter(r => r.revealed)
+    : radars;
 
-  const visibleLaunchers = showDetected
-    ? launchers.filter(ml => ml.revealed && ml.x !== undefined)
-    : launchers.filter(ml => ml.x !== undefined);
+  // Launchers always have coordinates — show all of them
+  const visibleLaunchers = launchers;
 
   const visibleGas = showDetected
-    ? gasTargets.filter(t => t.revealed && t.x !== undefined)
-    : gasTargets.filter(t => t.x !== undefined);
+    ? gasTargets.filter(t => t.revealed)
+    : gasTargets;
 
   return (
     <div
@@ -310,7 +310,7 @@ export default function TacticalMap({
           ← W · EAST → (NM)
         </text>
 
-        {/* ── Threat rings ── */}
+        {/* ── Radar detection rings ── */}
         {showThreatRings && visibleRadars.filter(r => !r.destroyed).map(r => (
           <circle
             key={`ring-r-${r.id}`}
@@ -327,18 +327,19 @@ export default function TacticalMap({
           />
         ))}
 
-        {showThreatRings && visibleLaunchers.filter(ml => !ml.fired).map(ml => (
+        {/* ── SAM engagement rings (centered on actual launcher position) ── */}
+        {showThreatRings && visibleLaunchers.filter(ml => ml.missiles_remaining > 0).map(ml => (
           <circle
             key={`ring-ml-${ml.id}`}
-            cx={tx(ml.x!)}
-            cy={ty(ml.y!)}
+            cx={tx(ml.x)}
+            cy={ty(ml.y)}
             r={samRingR}
             fill="#ff1744"
-            fillOpacity={0.06}
+            fillOpacity={0.05}
             stroke="#ff1744"
             strokeWidth={0.6}
-            strokeDasharray="4,3"
-            opacity={0.35}
+            strokeDasharray="3,4"
+            opacity={0.4}
             style={{ animation: 'threat-pulse 3s ease-in-out infinite' }}
           />
         ))}
@@ -373,16 +374,16 @@ export default function TacticalMap({
         {/* ── SAM Launchers ── */}
         {visibleLaunchers.map(ml => (
           <g key={ml.id} filter="url(#glow)">
-            <LauncherIcon cx={tx(ml.x!)} cy={ty(ml.y!)} fired={ml.fired} />
+            <LauncherIcon cx={tx(ml.x)} cy={ty(ml.y)} missilesRemaining={ml.missiles_remaining} />
             <text
-              x={tx(ml.x!) + 12}
-              y={ty(ml.y!) + 3}
-              fill={ml.fired ? '#556677' : '#ff1744'}
+              x={tx(ml.x) + 12}
+              y={ty(ml.y) + 3}
+              fill={ml.missiles_remaining === 0 ? '#556677' : '#ff1744'}
               fontSize={6}
               fontFamily="monospace"
               opacity={0.8}
             >
-              {ml.id.toUpperCase()}{ml.fired ? ' ✓' : ''}
+              {ml.id.toUpperCase()} [{ml.missiles_remaining}]
             </text>
           </g>
         ))}
@@ -404,8 +405,8 @@ export default function TacticalMap({
           </g>
         ))}
 
-        {/* ── LUCAS drones ── */}
-        {drones.map(d => (
+        {/* ── LUCAS drones (alive only — dead drones are removed from the map) ── */}
+        {drones.filter(d => d.alive).map(d => (
           <g key={d.id}>
             <DroneIcon type={d.type} cx={tx(d.x)} cy={ty(d.y)} alive={d.alive} />
           </g>
@@ -456,12 +457,38 @@ export default function TacticalMap({
           backdropFilter: 'blur(4px)',
         }}
       >
+        {/* Range rings toggle */}
+        <button
+          onClick={onToggleThreatRings}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'none',
+            border: `1px solid ${showThreatRings ? '#ffab00' : '#1a2332'}`,
+            color: showThreatRings ? '#ffab00' : '#556677',
+            fontSize: '0.55rem',
+            letterSpacing: '0.08em',
+            padding: '0.2rem 0.4rem',
+            cursor: 'pointer',
+            width: '100%',
+            marginBottom: '0.4rem',
+          }}
+        >
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%',
+            border: `1.5px solid ${showThreatRings ? '#ffab00' : '#556677'}`,
+            flexShrink: 0,
+          }} />
+          RANGE RINGS {showThreatRings ? 'ON' : 'OFF'}
+        </button>
+
         <div style={{ color: '#556677', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>LEGEND</div>
         {[
-          { color: '#ffd600', shape: '◆', label: 'Shahed Decoy' },
-          { color: '#76ff03', shape: '○', label: 'LUCAS Drone' },
+          { color: '#ffd600', shape: '◆', label: 'Bait LUCAS Drone' },
+          { color: '#76ff03', shape: '○', label: 'LUCAS Strike Drone' },
           { color: '#ffab00', shape: '◆', label: 'EWR Radar' },
-          { color: '#ff1744', shape: '▲', label: 'SAM Site' },
+          { color: '#ff1744', shape: '▲', label: 'SAM Launcher' },
           { color: '#ff9800', shape: '■', label: 'Fuel Target' },
         ].map(({ color, shape, label }) => (
           <div key={label} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
