@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D3AS — Pattern Lab</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: monospace; font-size: 12px; background: #0d1117; color: #e6edf3; padding: 16px; }
+h1 { font-size: 15px; font-weight: 500; color: #7ee8a2; margin-bottom: 4px; letter-spacing: 0.05em; }
+.subtitle { font-size: 11px; color: #8b949e; margin-bottom: 14px; }
+
+/* Layout */
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+.panel { display: flex; flex-direction: column; gap: 10px; }
+
+/* Cards */
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; }
+.card-title { font-size: 11px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* Strategy list */
+.strat-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 8px; border-radius: 4px; cursor: pointer;
+  border: 1px solid transparent; margin-bottom: 4px;
+  transition: background 0.1s;
+}
+.strat-item:hover { background: #1f2937; }
+.strat-item.selected { border-color: #378ADD; background: rgba(55,138,221,0.08); }
+.strat-item.running { border-color: #EF9F27; background: rgba(239,159,39,0.06); }
+.strat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.strat-name { font-size: 12px; font-weight: 500; color: #e6edf3; }
+.strat-desc { font-size: 10px; color: #8b949e; margin-top: 2px; line-height: 1.4; }
+.strat-score { font-size: 11px; color: #7ee8a2; margin-left: auto; white-space: nowrap; padding-left: 6px; }
+
+/* Controls */
+button {
+  font-family: monospace; font-size: 11px; padding: 5px 11px;
+  border: 1px solid #30363d; border-radius: 6px;
+  background: #161b22; color: #e6edf3; cursor: pointer;
+}
+button:hover { background: #21262d; }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button.primary { border-color: #378ADD; color: #378ADD; }
+button.primary:hover { background: rgba(55,138,221,0.1); }
+button.go { border-color: #7ee8a2; color: #7ee8a2; }
+button.go:hover { background: rgba(126,232,162,0.08); }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ctrl-group { display: flex; align-items: center; gap: 6px; }
+.ctrl-group label { font-size: 11px; color: #8b949e; }
+.ctrl-group input[type=range] { width: 80px; accent-color: #378ADD; }
+.ctrl-group span { font-size: 11px; font-weight: 500; min-width: 22px; }
+.ctrl-group input[type=number] {
+  width: 52px; background: #0d1117; border: 1px solid #30363d;
+  border-radius: 4px; color: #e6edf3; padding: 3px 6px; font-family: monospace; font-size: 11px;
+}
+
+/* Canvas */
+#canvas { display: block; border: 1px solid #30363d; border-radius: 6px; background: #07111f; width: 100%; }
+
+/* Results table */
+.results-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.results-table th { color: #8b949e; text-align: left; padding: 4px 8px; border-bottom: 1px solid #30363d; font-weight: 500; }
+.results-table td { padding: 4px 8px; border-bottom: 1px solid #21262d; }
+.results-table tr:last-child td { border-bottom: none; }
+.bar-wrap { height: 6px; background: #21262d; border-radius: 3px; min-width: 60px; }
+.bar-fill { height: 6px; border-radius: 3px; }
+
+/* Progress */
+#progress-wrap { display: none; }
+.progress-bar-outer { height: 4px; background: #21262d; border-radius: 2px; margin-top: 6px; }
+.progress-bar-inner { height: 4px; border-radius: 2px; background: #378ADD; transition: width 0.1s; }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #8b949e; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.ldot { width: 8px; height: 8px; border-radius: 50%; }
+.lsq  { width: 8px; height: 8px; border-radius: 1px; }
+
+/* Log */
+#log { max-height: 70px; overflow-y: auto; font-size: 10px; color: #8b949e; line-height: 1.5; }
+.ev-radar_ping { color: #378ADD; }
+.ev-missile_fired { color: #E24B4A; }
+.ev-radar_destroyed { color: #EF9F27; }
+.ev-gas_target_destroyed { color: #1D9E75; }
+.ev-drone_exploded { color: #ff8c42; }
+
+.tag { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+.tag-best { background: rgba(126,232,162,0.15); color: #7ee8a2; }
+.tag-worst { background: rgba(226,75,74,0.15); color: #E24B4A; }
+</style>
+</head>
+<body>
+<h1>D3AS — Pattern Lab</h1>
+<p class="subtitle">Design bait search patterns, run batch trials, compare win rates</p>
+
+<div class="layout">
+
+<!-- LEFT PANEL -->
+<div class="panel">
+
+  <div class="card">
+    <div class="card-title">Bait search patterns</div>
+    <div id="strat-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Simulation config</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="ctrl-group"><label>Bait drones</label><input type="range" id="sl-bait" min="1" max="20" value="10" step="1"><span id="bait-v">10</span></div>
+      <div class="ctrl-group"><label>Recv drones</label><input type="range" id="sl-recv" min="1" max="20" value="10" step="1"><span id="recv-v">10</span></div>
+      <div class="ctrl-group"><label>Trials per pattern</label><input type="number" id="trials" value="30" min="5" max="200"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Actions</div>
+    <div class="btn-row" style="margin-bottom:8px;">
+      <button class="primary" id="btn-preview">Preview selected</button>
+      <button id="btn-play" disabled>Pause</button>
+    </div>
+    <div class="btn-row">
+      <button class="go" id="btn-batch">Run all trials ↗</button>
+      <button id="btn-batch-sel">Run selected only</button>
+    </div>
+    <div id="progress-wrap">
+      <div style="font-size:10px;color:#8b949e;margin-top:8px;" id="progress-label">Running…</div>
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Pattern description</div>
+    <div id="desc-box" style="font-size:11px;color:#8b949e;line-height:1.6;">Select a pattern to see details.</div>
+  </div>
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="panel">
+
+  <div class="card" style="padding:8px 10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-size:11px;color:#8b949e;" id="canvas-label">Select a pattern and hit Preview</span>
+      <div class="legend">
+        <div class="legend-item"><span class="ldot" style="background:#4af;"></span>Bait</div>
+        <div class="legend-item"><span class="ldot" style="background:#af4;"></span>Recv</div>
+        <div class="legend-item"><span class="lsq"  style="background:#EF9F27;"></span>Radar</div>
+        <div class="legend-item"><span class="lsq"  style="background:#E24B4A;"></span>Launcher</div>
+        <div class="legend-item"><span class="lsq"  style="background:#1D9E75;"></span>Gas</div>
+      </div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div style="margin-top:6px;" id="log">Hit Preview or Run to start.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Trial results — avg score / max score / kill rate across all runs</div>
+    <table class="results-table" id="results-table">
+      <thead><tr>
+        <th>Pattern</th><th>Avg score</th><th>Max</th><th>Radar kills</th><th>Gas kills</th><th>Drone survival</th><th>Score dist.</th>
+      </tr></thead>
+      <tbody id="results-body">
+        <tr><td colspan="7" style="color:#8b949e;padding:12px 8px;">No results yet — run trials above.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// SIM CONSTANTS
+// ─────────────────────────────────────────────────────────
+const GRID=200,MAX_TICKS=60,DRONE_SPEED=5,MAX_FLIGHT=300;
+const RADAR_SIGHT=100,RADAR_PING_INTERVAL=30;
+const RADAR_VALUE=4,GAS_VALUE=1,DESTROY_THRESHOLD=3;
+const NUM_RADARS=6,NUM_LAUNCHERS=6,NUM_GAS=4,MISSILE_RANGE=25;
+
+function dist(x1,y1,x2,y2){return Math.sqrt((x2-x1)**2+(y2-y1)**2);}
+
+function randomPositions(n,margin=10,minSep=20){
+  const pos=[];
+  for(let a=0;a<300000&&pos.length<n;a++){
+    const x=margin+Math.random()*(GRID-2*margin);
+    const y=margin+Math.random()*(GRID-2*margin);
+    if(pos.every(([px,py])=>dist(x,y,px,py)>=minSep)) pos.push([x,y]);
+  }
+  return pos;
+}
+
+function initSim(numBait,numRecv){
+  const all=randomPositions(NUM_RADARS+NUM_LAUNCHERS+NUM_GAS);
+  return {
+    tick:0,score:0,complete:false,
+    radars:    all.slice(0,NUM_RADARS).map(([x,y],i)=>({id:`r${i+1}`,x,y,revealed:false,destroyed:false})),
+    launchers: all.slice(NUM_RADARS,NUM_RADARS+NUM_LAUNCHERS).map(([x,y],i)=>({id:`ml${i+1}`,x,y,revealed:false,fired:false})),
+    gas:       all.slice(NUM_RADARS+NUM_LAUNCHERS).map(([x,y],i)=>({id:`gt${i+1}`,x,y,revealed:false,destroyed:false})),
+    drones:[
+      ...Array.from({length:numBait},(_,i)=>({id:`bait_${i+1}`,type:'bait',x:0,y:0,alive:true,miles:0,spent:false,exploded:false,explodeTick:-99,index:i,total:numBait})),
+      ...Array.from({length:numRecv},(_,i)=>({id:`recv_${i+1}`,type:'recv',x:0,y:0,alive:true,miles:0,spent:false,exploded:false,explodeTick:-99,index:i,total:numRecv}))
+    ],
+    events:[],revealedRadars:{},explosions:[],
+    radarsDestroyed:0,gasDestroyed:0
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// RECV DRONE AI (fixed — always targets nearest revealed radar)
+// ─────────────────────────────────────────────────────────
+function recvTarget(drone,state){
+  const aliveRIds=new Set(state.radars.filter(r=>!r.destroyed).map(r=>r.id));
+  const cands=Object.entries(state.revealedRadars).filter(([id])=>aliveRIds.has(id));
+  if(cands.length){
+    const best=cands.reduce((a,b)=>dist(drone.x,drone.y,a[1][0],a[1][1])<dist(drone.x,drone.y,b[1][0],b[1][1])?a:b);
+    return {x:best[1][0],y:best[1][1]};
+  }
+  return {x:GRID/2,y:GRID/2};
+}
+
+// ─────────────────────────────────────────────────────────
+// BAIT PATTERN LIBRARY
+// ─────────────────────────────────────────────────────────
+const PATTERNS = [
+
+  {
+    id:'stream',
+    name:'Stream (baseline)',
+    color:'#888',
+    desc:'All bait drones chase the same nearest target — the naive default. Mirrors a stream salvo: redundant coverage, no area denial, easy for defenses to handle one axis.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      return {x:GRID/2,y:GRID/2};
+    }
+  },
+
+  {
+    id:'fan',
+    name:'Saturation fan',
+    color:'#4af',
+    desc:'Drones spread into N equal angular lanes from the SW corner (0°–90°). Each drone owns a lane and sweeps toward the far boundary. On radar ping, the nearest drone converges; others hold lanes. Mirrors the CIMSEC saturation pattern: wide front, multi-axis coverage.',
+    target(drone,state){
+      const n=drone.total, idx=drone.index;
+      const angleMin=0, angleMax=Math.PI/2;
+      const angle=angleMin+(idx/(Math.max(n-1,1)))*(angleMax-angleMin);
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length){
+        // only closest drone in the swarm converges; others keep their lane
+        const myDist=d=>dist(drone.x,drone.y,d.x,d.y);
+        const nearest=rev.reduce((a,b)=>myDist(a)<myDist(b)?a:b);
+        // am I the designated converger for this radar? (closest bait to it)
+        const me=drone;
+        // just converge — saturation means all move toward revealed once found
+        return nearest;
+      }
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length){
+        // each bait targets the gas target in its angular sector
+        const myAngle=angle;
+        let best=null,bestScore=Infinity;
+        for(const g of ag){
+          const gAngle=Math.atan2(g.y,g.x);
+          const diff=Math.abs(gAngle-myAngle);
+          if(diff<bestScore){bestScore=diff;best=g;}
+        }
+        return best||ag[0];
+      }
+      // sweep lane: go to far corner along own angle
+      const reach=190;
+      return {x:Math.cos(angle)*reach,y:Math.sin(angle)*reach};
+    }
+  },
+
+  {
+    id:'grid',
+    name:'Grid sweep',
+    color:'#a78bfa',
+    desc:'Divides the 200×200 map into a grid of cells. Each bait drone is assigned a cell centroid to sweep. After clearing its cell, it moves to the next uncovered cell. Maximises area coverage with minimal overlap.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const n=drone.total;
+      const cols=Math.ceil(Math.sqrt(n)), rows=Math.ceil(n/cols);
+      const cellW=180/cols, cellH=180/rows;
+      const col=drone.index%cols, row=Math.floor(drone.index/cols);
+      const cx=10+col*cellW+cellW/2, cy=10+row*cellH+cellH/2;
+      const ag=state.gas.filter(g=>!g.destroyed);
+      // if a gas target is in my cell, hit it
+      if(ag.length){
+        const mine=ag.filter(g=>Math.abs(g.x-cx)<cellW/2&&Math.abs(g.y-cy)<cellH/2);
+        if(mine.length) return mine[0];
+        // otherwise go to cell centre and wait for pings
+        return {x:cx,y:cy};
+      }
+      return {x:cx,y:cy};
+    }
+  },
+
+  {
+    id:'spiral',
+    name:'Spiral outward',
+    color:'#f472b6',
+    desc:'Drones launch in a tight cluster and spiral outward from the origin. The spiral expands coverage progressively, mimicking a growing search radius. Inspired by the idea of starting with low uncertainty near launch and expanding as fuel allows.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      // spiral: angle offset by index, radius grows with tick
+      const tickFraction=Math.min(1,(drone.miles/MAX_FLIGHT));
+      const radius=20+tickFraction*130;
+      const baseAngle=(drone.index/drone.total)*Math.PI*2;
+      const angle=baseAngle+tickFraction*Math.PI*3;
+      return {x:Math.max(5,Math.min(195,GRID/2+Math.cos(angle)*radius)),y:Math.max(5,Math.min(195,GRID/2+Math.sin(angle)*radius))};
+    }
+  },
+
+  {
+    id:'diagonal',
+    name:'Diagonal lanes',
+    color:'#fb923c',
+    desc:'Drones are assigned parallel diagonal lanes running SW→NE across the map. Covers the full map area systematically at 45°, forcing any radar in range to ping regardless of position. Good for maps where threats cluster along a diagonal axis.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const n=drone.total;
+      const offset=(drone.index/(Math.max(n-1,1)))*180;
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      // lane: start at (offset,0) go to (offset+130,130) clamped
+      const progress=Math.min(1,drone.miles/MAX_FLIGHT);
+      return {x:Math.min(195,offset+progress*130),y:Math.min(195,progress*130)};
+    }
+  },
+
+  {
+    id:'scouts',
+    name:'Scout + exploit',
+    color:'#34d399',
+    desc:'30% of bait drones are designated scouts that race ahead along spread angles to trigger radar pings as fast as possible. The remaining 70% hold near origin until a ping fires, then swarm the revealed radar. Exploits the CIMSEC insight: let a few scouts pay the cost of search, hold reserves for exploitation.',
+    target(drone,state){
+      const n=drone.total;
+      const numScouts=Math.max(1,Math.round(n*0.30));
+      const isScout=drone.index<numScouts;
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length){
+        return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      }
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      if(isScout){
+        const angle=(drone.index/Math.max(numScouts-1,1))*(Math.PI/2);
+        return {x:Math.min(195,Math.cos(angle)*190),y:Math.min(195,Math.sin(angle)*190)};
+      }
+      // exploiters: hold at staging area until called
+      return {x:20+drone.index*3,y:20};
+    }
+  },
+
+  {
+    id:'pincer',
+    name:'Pincer',
+    color:'#f59e0b',
+    desc:'Half the drones sweep along the X-axis edge (y≈0), the other half sweep along the Y-axis edge (x≈0), then both wings converge inward. Creates a two-pronged pincer that maximises the probability of entering a radar\'s 100-mile sight ring from two orthogonal axes simultaneously.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const half=Math.floor(drone.total/2);
+      const progress=Math.min(1,drone.miles/MAX_FLIGHT);
+      if(drone.index<half){
+        // X-axis wing: march along y=10, spread by index
+        const spread=10+(drone.index/Math.max(half-1,1))*170;
+        return {x:Math.min(195,progress*190),y:spread};
+      } else {
+        // Y-axis wing: march along x=10, spread by index
+        const i2=drone.index-half;
+        const half2=drone.total-half;
+        const spread=10+(i2/Math.max(half2-1,1))*170;
+        return {x:spread,y:Math.min(195,progress*190)};
+      }
+    }
+  },
+
+  {
+    id:'wave',
+    name:'Rolling wave',
+    color:'#60a5fa',
+    desc:'Drones launch in successive waves, each wave a horizontal line advancing deeper into the map. Wave 1 sweeps at y=50, wave 2 at y=100, wave 3 at y=150, etc. Once a wave hits a radar sight ring, that wave triggers the ping; later waves are already in position to converge quickly.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const wavesCount=3;
+      const wave=drone.index%wavesCount;
+      const posInWave=Math.floor(drone.index/wavesCount);
+      const dronesPerWave=Math.ceil(drone.total/wavesCount);
+      const xSpread=10+(posInWave/Math.max(dronesPerWave-1,1))*180;
+      const yDepths=[60,120,175];
+      return {x:xSpread,y:yDepths[wave]};
+    }
+  },
+
+  {
+    id:'random',
+    name:'Random walk',
+    color:'#94a3b8',
+    desc:'Each drone picks a random waypoint in the map on init and flies toward it. On radar reveal they converge. Pure chaos baseline — sometimes stumbles into a great result, usually mediocre. Good statistical floor for comparison.',
+    _waypoints: new WeakMap(),
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      if(!drone._wp) drone._wp={x:10+Math.random()*180,y:10+Math.random()*180};
+      const d=dist(drone.x,drone.y,drone._wp.x,drone._wp.y);
+      if(d<8) drone._wp={x:10+Math.random()*180,y:10+Math.random()*180};
+      return drone._wp;
+    }
+  },
+
+  {
+    id:'perimeter',
+    name:'Perimeter sweep',
+    color:'#e879f9',
+    desc:'Drones hug the map boundary, evenly distributed along the perimeter. Since radar sight is 100 miles and the map is 200 miles, a perimeter drone is guaranteed to be within sight range of any radar located within 100 miles of the edge — covering most of the map area with boundary-hugging drones.',
+    target(drone,state){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      if(rev.length) return rev.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      if(ag.length) return ag.reduce((a,b)=>dist(drone.x,drone.y,a.x,a.y)<dist(drone.x,drone.y,b.x,b.y)?a:b);
+      const n=drone.total;
+      const perim=4*190;
+      const step=perim/n;
+      const pos=drone.index*step;
+      let x,y;
+      if(pos<190){x=10+pos;y=10;}
+      else if(pos<380){x=195;y=10+(pos-190);}
+      else if(pos<570){x=195-(pos-380);y=195;}
+      else{x=10;y=195-(pos-570);}
+      return {x,y};
+    }
+  },
+
+  {
+    id:'adaptive',
+    name:'Adaptive sector claim',
+    color:'#f87171',
+    desc:'Each drone dynamically claims the revealed radar or gas target that no other drone is already heading to (sector claiming). Prevents pile-ons. When nothing is revealed, drones spread into angular sectors. Implements the CIMSEC idea of saturation search collapsing into distributed strikes.',
+    target(drone,state,allDrones){
+      const rev=state.radars.filter(r=>r.revealed&&!r.destroyed);
+      const ag=state.gas.filter(g=>!g.destroyed);
+      const targets=[...rev,...ag];
+      if(targets.length){
+        // claim: pick target minimising distance but penalise targets already claimed by a closer drone
+        const me=drone;
+        let bestT=null,bestScore=Infinity;
+        for(const t of targets){
+          const myD=dist(me.x,me.y,t.x,t.y);
+          // count bait drones closer to this target
+          const closerCount=(allDrones||[]).filter(d=>d!==me&&d.type==='bait'&&d.alive&&!d.spent&&dist(d.x,d.y,t.x,t.y)<myD).length;
+          const score=myD*(1+closerCount*0.8);
+          if(score<bestScore){bestScore=score;bestT=t;}
+        }
+        return bestT||targets[0];
+      }
+      const angle=(drone.index/Math.max(drone.total-1,1))*(Math.PI/2);
+      return {x:Math.min(195,Math.cos(angle)*190),y:Math.min(195,Math.sin(angle)*190)};
+    }
+  }
+
+];
+
+// ─────────────────────────────────────────────────────────
+// MOVEMENT
+// ─────────────────────────────────────────────────────────
+function moveDrone(drone,tx,ty){
+  const rem=MAX_FLIGHT-drone.miles;
+  if(rem<=0) return;
+  const dx=tx-drone.x,dy=ty-drone.y,d=Math.sqrt(dx*dx+dy*dy);
+  if(d<1e-6) return;
+  const step=Math.min(DRONE_SPEED,d,rem),r=step/d;
+  drone.x=Math.max(0,Math.min(GRID-1,drone.x+dx*r));
+  drone.y=Math.max(0,Math.min(GRID-1,drone.y+dy*r));
+  drone.miles+=step;
+}
+
+// ─────────────────────────────────────────────────────────
+// TICK
+// ─────────────────────────────────────────────────────────
+function advanceTick(state,pattern){
+  if(state.complete) return [];
+  state.tick++;
+  const evs=[];
+  const alive=state.drones.filter(d=>d.alive&&!d.spent);
+  const aliveR=state.radars.filter(r=>!r.destroyed);
+  const unfired=state.launchers.filter(l=>!l.fired);
+
+  // 1. Move
+  for(const d of alive){
+    let t;
+    if(d.type==='bait') t=pattern.target(d,state,alive);
+    else t=recvTarget(d,state);
+    if(t) moveDrone(d,t.x,t.y);
+  }
+
+  // 2+3. Radar pings
+  const postMove=state.drones.filter(d=>d.alive&&!d.spent);
+  const periodic=(state.tick%RADAR_PING_INTERVAL===0);
+  for(const radar of aliveR){
+    const triggered=postMove.some(d=>dist(radar.x,radar.y,d.x,d.y)<=RADAR_SIGHT);
+    if(periodic||triggered){
+      radar.revealed=true;
+      state.revealedRadars[radar.id]=[radar.x,radar.y];
+      const ev={tick:state.tick,type:'radar_ping',radar_id:radar.id,x:radar.x,y:radar.y};
+      evs.push(ev);state.events.push(ev);
+    }
+  }
+
+  // 4. Missiles
+  let curAlive=state.drones.filter(d=>d.alive&&!d.spent);
+  for(const launcher of unfired){
+    const inRange=curAlive.filter(d=>dist(launcher.x,launcher.y,d.x,d.y)<=MISSILE_RANGE);
+    if(!inRange.length) continue;
+    const victim=inRange.reduce((a,b)=>dist(launcher.x,launcher.y,a.x,a.y)<dist(launcher.x,launcher.y,b.x,b.y)?a:b);
+    victim.alive=false;victim.exploded=true;victim.explodeTick=state.tick;
+    launcher.fired=true;launcher.revealed=true;
+    state.explosions.push({x:victim.x,y:victim.y,tick:state.tick,big:false});
+    evs.push({tick:state.tick,type:'missile_fired',launcher_id:launcher.id,target:victim.id});
+    state.events.push(evs[evs.length-1]);
+    curAlive=curAlive.filter(d=>d.alive&&!d.spent);
+  }
+
+  // 5. Destructions
+  const surv=state.drones.filter(d=>d.alive&&!d.spent);
+  for(const drone of surv){
+    if(drone.type==='recv'){
+      for(const radar of aliveR){
+        if(radar.destroyed) continue;
+        if(dist(drone.x,drone.y,radar.x,radar.y)<=DESTROY_THRESHOLD){
+          radar.destroyed=true;radar.revealed=true;state.score+=RADAR_VALUE;state.radarsDestroyed++;
+          drone.alive=false;drone.spent=true;drone.exploded=true;drone.explodeTick=state.tick;
+          state.explosions.push({x:drone.x,y:drone.y,tick:state.tick,big:true});
+          evs.push({tick:state.tick,type:'radar_destroyed',radar_id:radar.id,drone_id:drone.id,score_gained:RADAR_VALUE,x:radar.x,y:radar.y});
+          evs.push({tick:state.tick,type:'drone_exploded',drone_id:drone.id,x:drone.x,y:drone.y});
+          state.events.push(...evs.slice(-2));
+          break;
+        }
+      }
+    }
+    if(!drone.alive) continue;
+    for(const g of state.gas){
+      if(g.destroyed) continue;
+      if(dist(drone.x,drone.y,g.x,g.y)<=DESTROY_THRESHOLD){
+        g.destroyed=true;g.revealed=true;state.score+=GAS_VALUE;state.gasDestroyed++;
+        state.explosions.push({x:drone.x,y:drone.y,tick:state.tick,big:false});
+        evs.push({tick:state.tick,type:'gas_target_destroyed',target_id:g.id,drone_id:drone.id,score_gained:GAS_VALUE,x:g.x,y:g.y});
+        state.events.push(evs[evs.length-1]);
+      }
+    }
+  }
+
+  if(state.tick>=MAX_TICKS) state.complete=true;
+  return evs;
+}
+
+function runToEnd(state,pattern){
+  while(!state.complete) advanceTick(state,pattern);
+}
+
+// ─────────────────────────────────────────────────────────
+// CANVAS
+// ─────────────────────────────────────────────────────────
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+
+function toCanvas(x,y){
+  const pad=14,w=canvas.width,h=canvas.height;
+  return [pad+x/GRID*(w-2*pad),pad+y/GRID*(h-2*pad)];
+}
+function drawGrid(){
+  const pad=14,w=canvas.width,h=canvas.height;
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=0.5;
+  for(let i=0;i<=4;i++){
+    const x=pad+i*(w-2*pad)/4,y=pad+i*(h-2*pad)/4;
+    ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+  }
+}
+function render(sim,pattern){
+  const w=canvas.offsetWidth||600;
+  canvas.width=w;canvas.height=Math.round(w*0.62);
+  ctx.clearRect(0,0,w,canvas.height);
+  if(!sim){drawGrid();return;}
+  const pad=14,scale=(w-2*pad)/GRID;
+  drawGrid();
+
+  // Radar rings
+  for(const r of sim.radars){
+    if(r.destroyed) continue;
+    const [cx,cy]=toCanvas(r.x,r.y);
+    ctx.beginPath();ctx.arc(cx,cy,RADAR_SIGHT*scale,0,Math.PI*2);
+    ctx.strokeStyle='rgba(55,138,221,0.06)';ctx.lineWidth=1;ctx.stroke();
+  }
+  // Gas
+  for(const g of sim.gas){
+    if(!g.revealed) continue;
+    const [cx,cy]=toCanvas(g.x,g.y);
+    ctx.fillStyle=g.destroyed?'rgba(29,158,117,0.25)':'#1D9E75';
+    ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+    if(!g.destroyed){ctx.strokeStyle='#fff';ctx.lineWidth=0.4;ctx.stroke();}
+  }
+  // Radars
+  for(const r of sim.radars){
+    const [cx,cy]=toCanvas(r.x,r.y);
+    if(!r.revealed&&!r.destroyed){
+      ctx.strokeStyle='rgba(255,255,255,0.09)';ctx.lineWidth=0.5;
+      ctx.setLineDash([2,3]);ctx.strokeRect(cx-4,cy-4,8,8);ctx.setLineDash([]);
+      continue;
+    }
+    ctx.fillStyle=r.destroyed?'rgba(100,80,0,0.3)':'#EF9F27';
+    ctx.fillRect(cx-4,cy-4,8,8);
+    if(!r.destroyed){ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=0.4;ctx.strokeRect(cx-4,cy-4,8,8);}
+  }
+  // Launchers
+  for(const l of sim.launchers){
+    const [cx,cy]=toCanvas(l.x,l.y);
+    if(!l.revealed){
+      ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=0.5;ctx.setLineDash([2,3]);
+      ctx.beginPath();ctx.moveTo(cx,cy-4);ctx.lineTo(cx+3,cy+3);ctx.lineTo(cx-3,cy+3);ctx.closePath();ctx.stroke();
+      ctx.setLineDash([]);continue;
+    }
+    ctx.fillStyle=l.fired?'rgba(226,75,74,0.3)':'#E24B4A';
+    ctx.beginPath();ctx.moveTo(cx,cy-5);ctx.lineTo(cx+4,cy+3);ctx.lineTo(cx-4,cy+3);ctx.closePath();ctx.fill();
+  }
+  // Explosions
+  for(const ex of sim.explosions){
+    const age=sim.tick-ex.tick;
+    if(age>4) continue;
+    const [cx,cy]=toCanvas(ex.x,ex.y);
+    const maxR=ex.big?20:12,r=maxR*(age/4),alpha=1-age/4;
+    ctx.beginPath();ctx.arc(cx,cy,Math.max(1,r),0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,140,66,${alpha})`;ctx.lineWidth=ex.big?2:1.2;ctx.stroke();
+    if(age<2){ctx.beginPath();ctx.arc(cx,cy,r*0.4,0,Math.PI*2);ctx.fillStyle=`rgba(255,220,100,${alpha*0.5})`;ctx.fill();}
+  }
+  // Drones
+  for(const d of sim.drones){
+    const [cx,cy]=toCanvas(d.x,d.y);
+    if(d.exploded){ctx.fillStyle='rgba(255,140,66,0.2)';ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);ctx.fill();continue;}
+    if(!d.alive){ctx.fillStyle='rgba(120,120,120,0.25)';ctx.beginPath();ctx.arc(cx,cy,2,0,Math.PI*2);ctx.fill();continue;}
+    let col;
+    if(d.type==='bait') col=pattern?pattern.color:'#4af';
+    else col='#af4';
+    ctx.fillStyle=col;
+    ctx.shadowColor=col;ctx.shadowBlur=4;
+    ctx.beginPath();ctx.arc(cx,cy,d.type==='bait'?2.5:3,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+  // Score
+  ctx.fillStyle='rgba(126,232,162,0.7)';ctx.font='11px monospace';
+  ctx.fillText(`T${sim.tick}  score:${sim.score}  alive:${sim.drones.filter(d=>d.alive&&!d.spent).length}`,pad+2,canvas.height-5);
+}
+
+// ─────────────────────────────────────────────────────────
+// UI STATE
+// ─────────────────────────────────────────────────────────
+let selectedId=PATTERNS[0].id;
+let previewSim=null, playing=false, playTimer=null;
+const results={}; // patternId -> {scores,radars,gas,survival}
+
+function getConfig(){
+  return {
+    numBait:parseInt(document.getElementById('sl-bait').value)||10,
+    numRecv:parseInt(document.getElementById('sl-recv').value)||10,
+    trials:parseInt(document.getElementById('trials').value)||30
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// STRATEGY LIST
+// ─────────────────────────────────────────────────────────
+function buildStratList(){
+  const el=document.getElementById('strat-list');
+  el.innerHTML='';
+  for(const p of PATTERNS){
+    const div=document.createElement('div');
+    div.className='strat-item'+(p.id===selectedId?' selected':'');
+    div.id='strat-'+p.id;
+    const r=results[p.id];
+    const avgStr=r?`${(r.scores.reduce((a,b)=>a+b,0)/r.scores.length).toFixed(1)}`:'—';
+    div.innerHTML=`
+      <div class="strat-dot" style="background:${p.color}"></div>
+      <div>
+        <div class="strat-name">${p.name}</div>
+        <div class="strat-desc" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.desc.split('.')[0]}.</div>
+      </div>
+      <div class="strat-score">${avgStr}</div>`;
+    div.addEventListener('click',()=>{
+      selectedId=p.id;
+      document.getElementById('desc-box').textContent=p.desc;
+      buildStratList();
+    });
+    el.appendChild(div);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// RESULTS TABLE
+// ─────────────────────────────────────────────────────────
+function updateResultsTable(){
+  const body=document.getElementById('results-body');
+  const entries=PATTERNS.map(p=>({p,r:results[p.id]})).filter(x=>x.r);
+  if(!entries.length){
+    body.innerHTML='<tr><td colspan="7" style="color:#8b949e;padding:12px 8px;">No results yet.</td></tr>';
+    return;
+  }
+  const maxAvg=Math.max(...entries.map(({r})=>r.scores.reduce((a,b)=>a+b,0)/r.scores.length));
+  const minAvg=Math.min(...entries.map(({r})=>r.scores.reduce((a,b)=>a+b,0)/r.scores.length));
+
+  entries.sort((a,b)=>{
+    const avgA=a.r.scores.reduce((x,y)=>x+y,0)/a.r.scores.length;
+    const avgB=b.r.scores.reduce((x,y)=>x+y,0)/b.r.scores.length;
+    return avgB-avgA;
+  });
+
+  body.innerHTML='';
+  const maxPossibleScore=NUM_RADARS*RADAR_VALUE+NUM_GAS*GAS_VALUE;
+
+  for(let i=0;i<entries.length;i++){
+    const {p,r}=entries[i];
+    const avg=r.scores.reduce((a,b)=>a+b,0)/r.scores.length;
+    const mx=Math.max(...r.scores);
+    const avgRadar=r.radars.reduce((a,b)=>a+b,0)/r.radars.length;
+    const avgGas=r.gas.reduce((a,b)=>a+b,0)/r.gas.length;
+    const avgSurv=r.survival.reduce((a,b)=>a+b,0)/r.survival.length;
+    const barPct=Math.round((avg/maxPossibleScore)*100);
+    const isBest=avg===maxAvg,isWorst=avg===minAvg;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px;"></span>
+        ${p.name}
+        ${isBest&&entries.length>1?'<span class="tag tag-best">best</span>':''}
+        ${isWorst&&entries.length>1?'<span class="tag tag-worst">worst</span>':''}
+      </td>
+      <td style="color:#7ee8a2;font-weight:500;">${avg.toFixed(1)}</td>
+      <td>${mx}</td>
+      <td>${avgRadar.toFixed(1)}/${NUM_RADARS}</td>
+      <td>${avgGas.toFixed(1)}/${NUM_GAS}</td>
+      <td>${(avgSurv*100).toFixed(0)}%</td>
+      <td>
+        <div class="bar-wrap" style="width:90px;">
+          <div class="bar-fill" style="width:${barPct}%;background:${p.color};"></div>
+        </div>
+      </td>`;
+    body.appendChild(tr);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// LOG
+// ─────────────────────────────────────────────────────────
+function logEvent(ev){
+  const log=document.getElementById('log');
+  const div=document.createElement('div');
+  div.className=`ev ev-${ev.type}`;
+  const labels={radar_ping:'ping',missile_fired:'missile',radar_destroyed:'radar destroyed',gas_target_destroyed:'gas hit',drone_exploded:'exploded'};
+  let msg=`[T${ev.tick}] ${labels[ev.type]||ev.type}`;
+  if(ev.radar_id) msg+=` ${ev.radar_id}`;
+  if(ev.score_gained) msg+=` +${ev.score_gained}`;
+  div.textContent=msg;
+  log.insertBefore(div,log.firstChild);
+  while(log.children.length>30) log.removeChild(log.lastChild);
+}
+
+// ─────────────────────────────────────────────────────────
+// PREVIEW
+// ─────────────────────────────────────────────────────────
+function stopPlay(){playing=false;clearInterval(playTimer);playTimer=null;document.getElementById('btn-play').textContent='Pause';}
+
+function startPreview(patId){
+  stopPlay();
+  const p=PATTERNS.find(x=>x.id===patId);
+  const {numBait,numRecv}=getConfig();
+  previewSim=initSim(numBait,numRecv);
+  document.getElementById('log').innerHTML='';
+  document.getElementById('canvas-label').textContent=`Preview: ${p.name}`;
+  render(previewSim,p);
+  playing=true;
+  document.getElementById('btn-play').disabled=false;
+  document.getElementById('btn-play').textContent='Pause';
+  playTimer=setInterval(()=>{
+    if(!previewSim||previewSim.complete){stopPlay();return;}
+    const evs=advanceTick(previewSim,p);
+    evs.forEach(logEvent);
+    render(previewSim,p);
+    if(previewSim.complete) stopPlay();
+  },160);
+}
+
+// ─────────────────────────────────────────────────────────
+// BATCH TRIALS
+// ─────────────────────────────────────────────────────────
+async function runBatch(patternIds){
+  stopPlay();
+  const {numBait,numRecv,trials}=getConfig();
+  const total=patternIds.length*trials;
+  let done=0;
+  document.getElementById('progress-wrap').style.display='block';
+  document.getElementById('btn-batch').disabled=true;
+  document.getElementById('btn-batch-sel').disabled=true;
+
+  for(const pid of patternIds){
+    const p=PATTERNS.find(x=>x.id===pid);
+    results[pid]={scores:[],radars:[],gas:[],survival:[]};
+    for(let t=0;t<trials;t++){
+      const sim=initSim(numBait,numRecv);
+      runToEnd(sim,p);
+      results[pid].scores.push(sim.score);
+      results[pid].radars.push(sim.radarsDestroyed);
+      results[pid].gas.push(sim.gasDestroyed);
+      const totalDrones=numBait+numRecv;
+      results[pid].survival.push(sim.drones.filter(d=>d.alive&&!d.spent).length/totalDrones);
+      done++;
+      if(done%10===0){
+        document.getElementById('progress-label').textContent=`Running ${p.name}… trial ${t+1}/${trials}`;
+        document.getElementById('progress-bar').style.width=`${(done/total)*100}%`;
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    buildStratList();
+    updateResultsTable();
+  }
+
+  document.getElementById('progress-wrap').style.display='none';
+  document.getElementById('btn-batch').disabled=false;
+  document.getElementById('btn-batch-sel').disabled=false;
+  buildStratList();
+  updateResultsTable();
+}
+
+// ─────────────────────────────────────────────────────────
+// WIRE UP
+// ─────────────────────────────────────────────────────────
+document.getElementById('btn-preview').addEventListener('click',()=>startPreview(selectedId));
+document.getElementById('btn-play').addEventListener('click',()=>{
+  if(playing){stopPlay();}
+  else if(previewSim&&!previewSim.complete){
+    const p=PATTERNS.find(x=>x.id===selectedId);
+    playing=true;document.getElementById('btn-play').textContent='Pause';
+    playTimer=setInterval(()=>{
+      if(!previewSim||previewSim.complete){stopPlay();return;}
+      const evs=advanceTick(previewSim,p);
+      evs.forEach(logEvent);
+      render(previewSim,p);
+      if(previewSim.complete) stopPlay();
+    },160);
+  }
+});
+document.getElementById('btn-batch').addEventListener('click',()=>runBatch(PATTERNS.map(p=>p.id)));
+document.getElementById('btn-batch-sel').addEventListener('click',()=>runBatch([selectedId]));
+document.getElementById('sl-bait').addEventListener('input',e=>document.getElementById('bait-v').textContent=e.target.value);
+document.getElementById('sl-recv').addEventListener('input',e=>document.getElementById('recv-v').textContent=e.target.value);
+window.addEventListener('resize',()=>{if(previewSim) render(previewSim,PATTERNS.find(x=>x.id===selectedId));else render(null,null);});
+
+// Init
+document.getElementById('desc-box').textContent=PATTERNS[0].desc;
+buildStratList();
+render(null,null);
+</script>
+</body>
+</html>
