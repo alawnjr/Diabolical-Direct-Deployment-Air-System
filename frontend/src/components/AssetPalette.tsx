@@ -43,6 +43,8 @@ interface AssetPaletteProps {
   onExecute: () => void;
   onFullRun: () => void;
   onReset: () => void;
+  tickSpeed: number;
+  onSpeedChange: (ms: number) => void;
   gameState: GameState | null;
   isExecuting: boolean;
 }
@@ -136,9 +138,18 @@ export default function AssetPalette({
   onExecute,
   onFullRun,
   onReset,
+  tickSpeed,
+  onSpeedChange,
   gameState,
   isExecuting,
 }: AssetPaletteProps) {
+
+const SPEED_OPTIONS = [
+  { label: '0.5×', ms: 1200 },
+  { label: '1×',   ms: 600  },
+  { label: '2×',   ms: 300  },
+  { label: '5×',   ms: 120  },
+];
   const isPlanning = phase === 'PLANNING';
   const isReady = phase === 'READY';
   const isExec = phase === 'EXECUTION';
@@ -430,9 +441,28 @@ export default function AssetPalette({
           )}
 
           {isExec && (
-            <button className="btn-tac btn-accent" onClick={onFullRun} disabled={isExecuting} style={{ width: '100%' }}>
-              ⚡ FULL RUN
-            </button>
+            <>
+              <div style={{ display: 'flex', gap: '0.25rem' }}>
+                {SPEED_OPTIONS.map(s => (
+                  <button
+                    key={s.ms}
+                    className="btn-tac"
+                    onClick={() => onSpeedChange(s.ms)}
+                    style={{
+                      flex: 1,
+                      color: tickSpeed === s.ms ? '#ffab00' : undefined,
+                      border: tickSpeed === s.ms ? '1px solid #ffab00' : undefined,
+                      opacity: tickSpeed === s.ms ? 1 : 0.5,
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <button className="btn-tac btn-accent" onClick={onFullRun} disabled={isExecuting} style={{ width: '100%' }}>
+                ⚡ FULL RUN
+              </button>
+            </>
           )}
 
           {(isReady || isExec || isComplete) && (

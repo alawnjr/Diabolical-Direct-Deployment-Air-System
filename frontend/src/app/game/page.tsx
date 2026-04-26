@@ -32,6 +32,7 @@ export default function GamePage() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [showThreatRings, setShowThreatRings] = useState(true);
   const [showDetected, setShowDetected] = useState(true);
+  const [tickSpeed, setTickSpeed] = useState(600);
 
   const lastTickRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -237,14 +238,14 @@ export default function GamePage() {
       }
     };
 
-    intervalRef.current = setInterval(tick, 600);
+    intervalRef.current = setInterval(tick, tickSpeed);
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
-  }, [phase, applyState, stopExecution]);
+  }, [phase, applyState, stopExecution, tickSpeed]);
 
   const handleFullRun = useCallback(async () => {
     stopExecution();
@@ -342,6 +343,8 @@ export default function GamePage() {
           onExecute={handleExecute}
           onFullRun={handleFullRun}
           onReset={handleReset}
+          tickSpeed={tickSpeed}
+          onSpeedChange={setTickSpeed}
           gameState={gameState}
           isExecuting={isExecuting}
         />
