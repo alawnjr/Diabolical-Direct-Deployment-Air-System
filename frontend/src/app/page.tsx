@@ -114,20 +114,34 @@ export default function LandingPage() {
         </div>
 
         {/* CTA */}
-        <Link href="/game" style={{ textDecoration: 'none' }}>
-          <button
-            className="btn-tac btn-primary"
-            style={{
-              fontSize: '0.85rem',
-              padding: '0.9rem 3rem',
-              letterSpacing: '0.22em',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            ▶ START MISSION
-          </button>
-        </Link>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/game" style={{ textDecoration: 'none' }}>
+            <button
+              className="btn-tac btn-primary"
+              style={{
+                fontSize: '0.85rem',
+                padding: '0.9rem 3rem',
+                letterSpacing: '0.22em',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              ▶ START MISSION
+            </button>
+          </Link>
+          <Link href="/analytics" style={{ textDecoration: 'none' }}>
+            <button
+              className="btn-tac btn-accent"
+              style={{
+                fontSize: '0.85rem',
+                padding: '0.9rem 2rem',
+                letterSpacing: '0.22em',
+              }}
+            >
+              ◈ ANALYTICS
+            </button>
+          </Link>
+        </div>
 
         <div style={{
           marginTop: '1rem',
