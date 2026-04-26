@@ -91,9 +91,9 @@ function DroneIcon({
 }) {
   if (!alive) {
     return (
-      <g>
-        <line x1={cx - 4} y1={cy - 4} x2={cx + 4} y2={cy + 4} stroke="#556677" strokeWidth={1.5} />
-        <line x1={cx + 4} y1={cy - 4} x2={cx - 4} y2={cy + 4} stroke="#556677" strokeWidth={1.5} />
+      <g opacity={0.7}>
+        <line x1={cx - 4} y1={cy - 4} x2={cx + 4} y2={cy + 4} stroke="#76ff03" strokeWidth={1.5} />
+        <line x1={cx + 4} y1={cy - 4} x2={cx - 4} y2={cy + 4} stroke="#76ff03" strokeWidth={1.5} />
       </g>
     );
   }
@@ -242,9 +242,7 @@ export default function TacticalMap({
   // Launchers always have coordinates — show all of them
   const visibleLaunchers = launchers;
 
-  const visibleGas = showDetected
-    ? gasTargets.filter(t => t.revealed)
-    : gasTargets;
+  const visibleGas = gasTargets;
 
   return (
     <div
@@ -422,10 +420,17 @@ export default function TacticalMap({
           </g>
         ))}
 
-        {/* ── LUCAS drones (alive only — dead drones are removed from the map) ── */}
-        {drones.filter(d => d.alive).map(d => (
-          <g key={d.id} className={detectedDroneIds.has(d.id) ? 'drone-detected' : undefined}>
-            <DroneIcon type={d.type} cx={tx(d.x)} cy={ty(d.y)} alive={d.alive} />
+        {/* ── LUCAS drones (alive + dead — dead shown as green X) ── */}
+        {drones.map(d => (
+          <g
+            key={d.id}
+            className={detectedDroneIds.has(d.id) ? 'drone-detected' : undefined}
+            style={{
+              transform: `translate(${tx(d.x)}px, ${ty(d.y)}px)`,
+              transition: d.alive ? 'transform 540ms linear' : 'none',
+            }}
+          >
+            <DroneIcon type={d.type} cx={0} cy={0} alive={d.alive} />
           </g>
         ))}
 
@@ -504,6 +509,7 @@ export default function TacticalMap({
         {[
           { color: '#ffd600', shape: '◆', label: 'Bait LUCAS Drone' },
           { color: '#76ff03', shape: '○', label: 'LUCAS Strike Drone' },
+          { color: '#76ff03', shape: '✕', label: 'Drone Destroyed' },
           { color: '#ffab00', shape: '◆', label: 'EWR Radar' },
           { color: '#ff1744', shape: '▲', label: 'SAM Launcher' },
           { color: '#ff9800', shape: '■', label: 'Fuel Target' },
