@@ -24,6 +24,15 @@ export default function BDAPanel({ gameState }: BDAPanelProps) {
     : 0;
   const dronesTotal = gameState?.drones_total ?? 0;
 
+  const totalPossibleScore =
+    (gameState?.entities.radars.reduce((s, r) => s + r.value, 0) ?? 0) +
+    (gameState?.entities.missile_launchers.reduce((s, ml) => s + ml.value, 0) ?? 0) +
+    (gameState?.entities.gas_targets.reduce((s, g) => s + g.value, 0) ?? 0);
+  const currentScore = gameState?.score ?? 0;
+  const destructionRate = totalPossibleScore > 0
+    ? Math.round((currentScore / totalPossibleScore) * 1000) / 10
+    : 0;
+
   return (
     <div className="tac-panel" style={{ flexShrink: 0 }}>
       <div className="tac-panel-header">BATTLE DAMAGE ASSESSMENT</div>
@@ -77,8 +86,8 @@ export default function BDAPanel({ gameState }: BDAPanelProps) {
               color: '#ff9800',
             },
             {
-              label: 'SCORE',
-              value: String(gameState?.score ?? 0),
+              label: 'DESTRUCTION RATE',
+              value: `${destructionRate}%`,
               color: '#ffab00',
             },
           ].map(({ label, value, color }) => (

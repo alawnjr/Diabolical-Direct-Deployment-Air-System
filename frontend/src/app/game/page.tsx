@@ -490,10 +490,17 @@ export default function GamePage() {
                 marginBottom: '0.5rem',
               }}
             >
-              {gameState?.score ?? 0}
+              {(() => {
+                const total =
+                  (gameState?.entities.radars.reduce((s, r) => s + r.value, 0) ?? 0) +
+                  (gameState?.entities.missile_launchers.reduce((s, ml) => s + ml.value, 0) ?? 0) +
+                  (gameState?.entities.gas_targets.reduce((s, g) => s + g.value, 0) ?? 0);
+                const rate = total > 0 ? Math.round(((gameState?.score ?? 0) / total) * 1000) / 10 : 0;
+                return `${rate}%`;
+              })()}
             </div>
             <div style={{ fontSize: '0.6rem', color: '#556677', marginBottom: '1.5rem' }}>
-              TOTAL SCORE
+              DESTRUCTION RATE
             </div>
 
             <div
