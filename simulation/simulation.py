@@ -37,6 +37,21 @@ DEFAULT_BAIT = 10
 DEFAULT_RECV = 10
 DEFAULT_CAMERA = 4
 
+VALID_ALGORITHMS = [
+    "grid_sweep",
+    "spiral_outward",
+    "saturation_fan",
+    "bait_ladder",
+    "reload_trap",
+    "multi_azimuth",
+    "random_walk",
+    "sector_claim",
+    "triangulation",
+    "hotspot_reinforce",
+    "scout_fix_finish",
+    "meta_selector",
+]
+
 
 # ---------------------------------------------------------------------------
 # Entity dataclasses
@@ -97,10 +112,12 @@ class SimState:
     events: list[dict] = field(default_factory=list)
     radar_sight: float = RADAR_SIGHT
     missile_fire_range: float = MISSILE_FIRE_RANGE
-    # Revealed radar positions, navigated toward by radar_receiver drones
+    # Revealed radar positions, navigated toward by receiver drones
     revealed_radar_positions: dict[str, tuple[float, float]] = field(default_factory=dict)
     # Shared visited grid cells — no two drones visit the same 1×1-mile cell
     visited_coords: set[tuple[int, int]] = field(default_factory=set)
+    algorithm: str = "grid_sweep"
+    algorithm_state: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +179,7 @@ def create_random_map(
     Launchers are placed near radars (round-robin if num_launchers > num_radars).
 
     Returns a dict with 'radars', 'launchers', 'gas' position lists,
-    or None if a valid placement cannot be found ("can't generate one").
+    or None if a valid placement cannot be found.
     """
     if num_radars < 0 or num_launchers < 0 or num_gas < 0:
         return None
@@ -205,6 +222,7 @@ def initialize_sim(
     num_launchers: int = DEFAULT_NUM_LAUNCHERS,
     num_gas: int = DEFAULT_NUM_GAS,
     num_camera: int = DEFAULT_CAMERA,
+    algorithm: str = "grid_sweep",
 ) -> SimState:
     """
     Create and return a fresh SimState.
@@ -217,10 +235,13 @@ def initialize_sim(
     if map_data is None:
         raise ValueError("can't generate one")
 
+    algo = algorithm if algorithm in VALID_ALGORITHMS else "grid_sweep"
+
     state = SimState(
         radar_sight=radar_sight,
         missile_fire_range=missile_fire_range,
         visited_coords={(0, 0)},
+        algorithm=algo,
     )
 
     state.radars = [
@@ -258,11 +279,12 @@ def initialize_sim(
         drones.append(LucasDrone(id=f"cam_{i+1}", drone_type="camera", x=0.0, y=0.0, angle=angle))
 
     state.lucas_drones = drones
+    _init_algorithm(state)
     return state
 
 
 # ---------------------------------------------------------------------------
-# Drone movement
+# Drone movement — base helpers
 # ---------------------------------------------------------------------------
 
 # Rotation offsets (degrees) to try when a cell is already visited
@@ -348,6 +370,316 @@ def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimStat
 
 
 # ---------------------------------------------------------------------------
+# Algorithm initialisation and movement
+# ---------------------------------------------------------------------------
+
+def _init_algorithm(state: SimState) -> None:
+    """Assign algorithm-specific state and angles to each non-camera drone."""
+    algo = state.algorithm
+    drones = [d for d in state.lucas_drones if d.drone_type != "camera"]
+    bait_drones = [d for d in drones if d.drone_type == "bait"]
+    recv_drones = [d for d in drones if d.drone_type == "radar_receiver"]
+    n = len(drones)
+
+    if algo in ("grid_sweep", "meta_selector"):
+        # Parallel horizontal lanes evenly spread across map height (10–190 NM)
+        for i, drone in enumerate(drones):
+            lane_y = 10.0 + 180.0 * i / max(n - 1, 1)
+            state.algorithm_state[drone.id] = {"lane_y": lane_y, "dir": 1}
+        if algo == "meta_selector":
+            state.algorithm_state["__meta_phase"] = "grid_sweep"
+
+    elif algo == "spiral_outward":
+        # Each drone gets a different starting angle/radius for non-overlapping spirals
+        for i, drone in enumerate(drones):
+            spread = (math.pi / 4) * i / max(n, 1)
+            state.algorithm_state[drone.id] = {
+                "angle": math.radians(5) + spread,
+                "radius": 5.0 + i * (GRID_SIZE * 0.9 / max(n, 1)),
+            }
+
+    elif algo == "saturation_fan":
+        # Compress all drones into a tight 20° cone centred on 45°
+        center = math.radians(45.0)
+        half = math.radians(10.0)
+        for i, drone in enumerate(drones):
+            t = i / max(n - 1, 1)
+            drone.angle = center - half + t * 2 * half
+
+    elif algo == "bait_ladder":
+        # Stagger bait drones: one activates every 2 ticks; receivers fan out immediately
+        for i, drone in enumerate(bait_drones):
+            state.algorithm_state[drone.id] = {"start_tick": i * 2 + 1}
+        for drone in recv_drones:
+            state.algorithm_state[drone.id] = {"start_tick": 0}
+
+    elif algo == "reload_trap":
+        # Wave 1: bait active ticks 1-25; Wave 2: receivers active ticks 26-60
+        for drone in bait_drones:
+            state.algorithm_state[drone.id] = {"active_from": 1, "active_to": 25}
+        for drone in recv_drones:
+            state.algorithm_state[drone.id] = {"active_from": 26, "active_to": 60}
+
+    elif algo == "multi_azimuth":
+        # Three bearing clusters at ~20°, ~45°, ~70° with ±4° spread
+        cluster_centers = [math.radians(20), math.radians(45), math.radians(70)]
+        spread = math.radians(4)
+        for i, drone in enumerate(drones):
+            cluster = cluster_centers[i % 3]
+            drone.angle = cluster + random.uniform(-spread, spread)
+
+    elif algo == "sector_claim":
+        # Divide map into sqrt(n)×sqrt(n) grid; assign each drone one sector
+        cols = max(1, math.ceil(math.sqrt(n)))
+        rows = max(1, math.ceil(n / cols))
+        sector_w = float(GRID_SIZE) / cols
+        sector_h = float(GRID_SIZE) / rows
+        for i, drone in enumerate(drones):
+            col = i % cols
+            row = i // cols
+            sx = col * sector_w
+            sy = row * sector_h
+            ex = min(sx + sector_w, float(GRID_SIZE - 1))
+            ey = min(sy + sector_h, float(GRID_SIZE - 1))
+            cx, cy = (sx + ex) / 2, (sy + ey) / 2
+            state.algorithm_state[drone.id] = {
+                "x_min": sx, "x_max": ex,
+                "y_min": sy, "y_max": ey,
+                "sweep_y": sy + 5.0,
+                "dir": 1,
+            }
+            drone.angle = math.atan2(cy, cx) if (cx > 0 or cy > 0) else math.radians(45)
+
+    # triangulation, hotspot_reinforce, random_walk, scout_fix_finish:
+    # keep the default fan-out angles assigned during initialize_sim
+
+
+def _algo_grid_sweep(drone: LucasDrone, state: SimState) -> None:
+    """Fly to an assigned horizontal lane then sweep east-west."""
+    remaining = MAX_FLIGHT - drone.miles_flown
+    if remaining <= 0:
+        return
+    speed = BAIT_DRONE_SPEED if drone.drone_type == "bait" else DRONE_SPEED
+    step = min(speed, remaining)
+
+    ds = state.algorithm_state.get(drone.id)
+    if not ds:
+        _move_drone_direction(drone, state)
+        return
+
+    lane_y = ds["lane_y"]
+    dy = lane_y - drone.y
+
+    if abs(dy) > step:
+        # Navigate north/south toward lane first
+        drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + math.copysign(step, dy)))
+    else:
+        # Arrived at lane — sweep horizontally
+        drone.y = max(0.0, min(float(GRID_SIZE - 1), lane_y))
+        dir_ = ds.get("dir", 1)
+        new_x = drone.x + dir_ * step
+        if new_x >= GRID_SIZE - 1:
+            new_x = float(GRID_SIZE - 1)
+            ds["dir"] = -1
+        elif new_x <= 0.0:
+            new_x = 0.0
+            ds["dir"] = 1
+        drone.x = new_x
+
+    drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
+
+
+def _algo_spiral_outward(drone: LucasDrone, state: SimState) -> None:
+    """Follow an Archimedean spiral outward from the launch origin."""
+    remaining = MAX_FLIGHT - drone.miles_flown
+    if remaining <= 0:
+        return
+    speed = BAIT_DRONE_SPEED if drone.drone_type == "bait" else DRONE_SPEED
+    step = min(speed, remaining)
+
+    ds = state.algorithm_state.get(drone.id)
+    if not ds:
+        _move_drone_direction(drone, state)
+        return
+
+    angle = ds["angle"]
+    radius = ds["radius"]
+
+    tx = max(0.0, min(float(GRID_SIZE - 1), radius * math.cos(angle)))
+    ty = max(0.0, min(float(GRID_SIZE - 1), radius * math.sin(angle)))
+
+    dx, dy = tx - drone.x, ty - drone.y
+    d = math.sqrt(dx * dx + dy * dy)
+    if d > 1e-6:
+        ratio = min(step, d) / d
+        drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
+        drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
+
+    ds["angle"] = angle + math.radians(8)
+    ds["radius"] = min(radius + 6.0, float(GRID_SIZE) * 0.95)
+
+    drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
+
+
+def _algo_bait_ladder(drone: LucasDrone, state: SimState) -> None:
+    """Bait drones activate one-by-one at staggered ticks."""
+    ds = state.algorithm_state.get(drone.id, {})
+    if state.tick < ds.get("start_tick", 0):
+        return
+    _move_drone_direction(drone, state)
+
+
+def _algo_reload_trap(drone: LucasDrone, state: SimState) -> None:
+    """Bait active ticks 1-25; receivers active ticks 26-60."""
+    ds = state.algorithm_state.get(drone.id, {})
+    if not (ds.get("active_from", 1) <= state.tick <= ds.get("active_to", 60)):
+        return
+    _move_drone_direction(drone, state)
+
+
+def _algo_random_walk(drone: LucasDrone, state: SimState) -> None:
+    """Jitter heading by ±25° each tick then move normally."""
+    drone.angle += random.uniform(-math.radians(25), math.radians(25))
+    _move_drone_direction(drone, state)
+
+
+def _algo_sector_claim(drone: LucasDrone, state: SimState) -> None:
+    """Navigate to an assigned map sector and sweep it in horizontal rows."""
+    remaining = MAX_FLIGHT - drone.miles_flown
+    if remaining <= 0:
+        return
+    speed = BAIT_DRONE_SPEED if drone.drone_type == "bait" else DRONE_SPEED
+    step = min(speed, remaining)
+
+    ds = state.algorithm_state.get(drone.id)
+    if not ds:
+        _move_drone_direction(drone, state)
+        return
+
+    x_min, x_max = ds["x_min"], ds["x_max"]
+    y_min, y_max = ds["y_min"], ds["y_max"]
+
+    # Navigate to sector centre if outside sector
+    if not (x_min <= drone.x <= x_max and y_min <= drone.y <= y_max):
+        cx, cy = (x_min + x_max) / 2, (y_min + y_max) / 2
+        dx, dy = cx - drone.x, cy - drone.y
+        d = math.sqrt(dx * dx + dy * dy)
+        if d > 1e-6:
+            ratio = min(step, d) / d
+            drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
+            drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
+        drone.miles_flown += step
+        state.visited_coords.add((round(drone.x), round(drone.y)))
+        return
+
+    # Horizontal sweep within sector
+    sweep_y = ds.get("sweep_y", (y_min + y_max) / 2)
+    dir_ = ds.get("dir", 1)
+    dy = sweep_y - drone.y
+
+    if abs(dy) > step:
+        drone.y = max(y_min, min(y_max, drone.y + math.copysign(step, dy)))
+    else:
+        drone.y = max(y_min, min(y_max, sweep_y))
+        new_x = drone.x + dir_ * step
+        if new_x >= x_max:
+            new_x = x_max
+            ds["dir"] = -1
+            ds["sweep_y"] = min(sweep_y + 8.0, y_max)
+        elif new_x <= x_min:
+            new_x = x_min
+            ds["dir"] = 1
+            ds["sweep_y"] = min(sweep_y + 8.0, y_max)
+        drone.x = max(x_min, min(x_max, new_x))
+
+    drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
+
+
+def _algo_triangulation(drone: LucasDrone, state: SimState) -> None:
+    """Spread drones across revealed radars by index for angular coverage."""
+    alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
+    candidates = [
+        (rx, ry)
+        for rid, (rx, ry) in state.revealed_radar_positions.items()
+        if rid in alive_radar_ids
+    ]
+    if not candidates:
+        _move_drone_direction(drone, state)
+        return
+    try:
+        idx = int(drone.id.rsplit("_", 1)[-1]) - 1
+    except (ValueError, IndexError):
+        idx = 0
+    tx, ty = candidates[idx % len(candidates)]
+    _move_drone_to_point(drone, tx, ty, state)
+
+
+def _algo_hotspot_reinforce(drone: LucasDrone, state: SimState) -> None:
+    """All drones rush to the closest revealed alive radar."""
+    alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
+    candidates = [
+        (rx, ry)
+        for rid, (rx, ry) in state.revealed_radar_positions.items()
+        if rid in alive_radar_ids
+    ]
+    if not candidates:
+        _move_drone_direction(drone, state)
+        return
+    tx, ty = min(candidates, key=lambda p: _dist(drone.x, drone.y, p[0], p[1]))
+    _move_drone_to_point(drone, tx, ty, state)
+
+
+def _algo_scout_fix_finish(drone: LucasDrone, state: SimState) -> None:
+    """Bait fans out normally; receivers hold until at least one radar is confirmed."""
+    if drone.drone_type == "bait":
+        _move_drone_direction(drone, state)
+        return
+    alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
+    candidates = [
+        (rx, ry)
+        for rid, (rx, ry) in state.revealed_radar_positions.items()
+        if rid in alive_radar_ids
+    ]
+    if not candidates:
+        return  # Receivers hold position until a radar is confirmed
+    tx, ty = min(candidates, key=lambda p: _dist(drone.x, drone.y, p[0], p[1]))
+    _move_drone_to_point(drone, tx, ty, state)
+
+
+def _move_drone_by_algorithm(drone: LucasDrone, state: SimState) -> None:
+    """Dispatch movement to the active algorithm handler."""
+    algo = state.algorithm
+
+    if algo == "meta_selector":
+        # Phase transition: switch to hotspot reinforce when first radar is revealed
+        if state.algorithm_state.get("__meta_phase") == "grid_sweep" and state.revealed_radar_positions:
+            state.algorithm_state["__meta_phase"] = "hotspot"
+        if state.algorithm_state.get("__meta_phase") == "grid_sweep":
+            _algo_grid_sweep(drone, state)
+        else:
+            _algo_hotspot_reinforce(drone, state)
+        return
+
+    _FN = {
+        "grid_sweep":        _algo_grid_sweep,
+        "spiral_outward":    _algo_spiral_outward,
+        "saturation_fan":    _move_drone_direction,
+        "bait_ladder":       _algo_bait_ladder,
+        "reload_trap":       _algo_reload_trap,
+        "multi_azimuth":     _move_drone_direction,
+        "random_walk":       _algo_random_walk,
+        "sector_claim":      _algo_sector_claim,
+        "triangulation":     _algo_triangulation,
+        "hotspot_reinforce": _algo_hotspot_reinforce,
+        "scout_fix_finish":  _algo_scout_fix_finish,
+    }
+    _FN.get(algo, _move_drone_direction)(drone, state)
+
+
+# ---------------------------------------------------------------------------
 # Core simulation tick
 # ---------------------------------------------------------------------------
 
@@ -356,10 +688,11 @@ def advance_tick(state: SimState) -> list[dict]:
     Advance the simulation by exactly one minute.
 
     Tick order:
-      1. Move all alive LUCAS drones along their fan-out headings
+      1. Move all alive LUCAS drones via the active algorithm
+         (camera drones use their own scan-and-navigate logic)
       2. Radar sight-range check → ping (reveals radar to receiver drones)
          Radar periodic ping (every 30 ticks, regardless of LUCAS proximity)
-         On detection: associated SAM launcher fires once (99% hit rate)
+         On detection: associated SAM launcher fires once (90% hit rate)
       3. Contact destructions:
            - Drone reaches radar     → radar destroyed, drone dies
            - Drone reaches launcher  → launcher destroyed, drone dies
@@ -392,12 +725,13 @@ def advance_tick(state: SimState) -> list[dict]:
             drone.target_y = nearest_t[1] if nearest_t else None
 
     for drone in alive_drones:
-        if drone.drone_type == "radar_receiver":
-            _navigate_receiver_to_radar(drone, state)
-        elif drone.drone_type == "camera" and drone.target_x is not None:
-            _move_drone_to_point(drone, drone.target_x, drone.target_y, state)  # type: ignore[arg-type]
+        if drone.drone_type == "camera":
+            if drone.target_x is not None:
+                _move_drone_to_point(drone, drone.target_x, drone.target_y, state)  # type: ignore[arg-type]
+            else:
+                _move_drone_direction(drone, state)
         else:
-            _move_drone_direction(drone, state)
+            _move_drone_by_algorithm(drone, state)
 
     # --- 2. Radar pings and SAM cuing ---
     alive_drones_now = [d for d in state.lucas_drones if d.alive]
@@ -603,6 +937,7 @@ def get_public_state(state: SimState) -> dict[str, Any]:
         "tick": state.tick,
         "score": state.score,
         "complete": state.complete,
+        "algorithm": state.algorithm,
         "radar_sight": state.radar_sight,
         "missile_fire_range": state.missile_fire_range,
         "camera_drone_range": CAMERA_DRONE_RANGE,

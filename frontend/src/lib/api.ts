@@ -26,6 +26,7 @@ export async function startSim(
   numLaunchers = 6,
   numGas = 4,
   numCamera = 4,
+  algorithm = 'grid_sweep',
 ): Promise<GameState> {
   const res = await fetch(`${API_BASE}/api/start`, {
     method: 'POST',
@@ -39,6 +40,7 @@ export async function startSim(
       num_launchers: numLaunchers,
       num_gas: numGas,
       num_camera: numCamera,
+      algorithm,
     }),
   });
   if (!res.ok) {

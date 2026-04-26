@@ -102,6 +102,7 @@ export interface GameState {
   tick: number;
   score: number;
   complete: boolean;
+  algorithm?: string;
   radar_sight: number;
   missile_fire_range: number;
   camera_drone_range?: number;

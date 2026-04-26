@@ -8,6 +8,7 @@ import AssetPalette from '@/components/AssetPalette';
 import TacticalMap from '@/components/TacticalMap';
 import MissionLog from '@/components/MissionLog';
 import BDAPanel from '@/components/BDAPanel';
+import AlgorithmDocs from '@/components/AlgorithmDocs';
 
 export default function GamePage() {
   const [phase, setPhase] = useState<GamePhase>('PLANNING');
@@ -20,6 +21,8 @@ export default function GamePage() {
   const [numRadars, setNumRadars] = useState(6);
   const [numLaunchers, setNumLaunchers] = useState(6);
   const [numGas, setNumGas] = useState(4);
+  const [algorithm, setAlgorithm] = useState('grid_sweep');
+  const [showAlgoDocs, setShowAlgoDocs] = useState(false);
   const [allEvents, setAllEvents] = useState<SimEvent[]>([]);
   const [activePings, setActivePings] = useState<PingEffect[]>([]);
   const [detectedDroneIds, setDetectedDroneIds] = useState<Set<string>>(new Set());
@@ -150,7 +153,7 @@ export default function GamePage() {
     setBackendError(null);
 
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm);
       setGameState(state);
       setPhase('READY');
     } catch (err) {
@@ -161,7 +164,7 @@ export default function GamePage() {
           : 'Failed to initialize simulation. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm]);
 
   const handleExecute = useCallback(() => {
     if (phase !== 'READY') return;
@@ -185,7 +188,7 @@ export default function GamePage() {
     setGameState(null);
     setBackendError(null);
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera, algorithm);
       setGameState(state);
       setPhase('EXECUTION');
       setIsExecuting(true);
@@ -197,7 +200,7 @@ export default function GamePage() {
           : 'Failed to launch mission. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas, algorithm]);
 
   // Execution loop
   useEffect(() => {
@@ -316,6 +319,7 @@ export default function GamePage() {
           numRadars={numRadars}
           numLaunchers={numLaunchers}
           numGas={numGas}
+          algorithm={algorithm}
           onNumBaitChange={setNumBait}
           onNumReceiverChange={setNumReceiver}
           onNumCameraChange={setNumCamera}
@@ -324,6 +328,8 @@ export default function GamePage() {
           onNumRadarsChange={setNumRadars}
           onNumLaunchersChange={setNumLaunchers}
           onNumGasChange={setNumGas}
+          onAlgorithmChange={setAlgorithm}
+          onShowAlgorithmDocs={() => setShowAlgoDocs(true)}
           onInitialize={handleInitialize}
           onLaunchAll={handleLaunchAll}
           onExecute={handleExecute}
@@ -456,6 +462,9 @@ export default function GamePage() {
           </div>
         </div>
       )}
+
+      {/* Algorithm docs modal */}
+      {showAlgoDocs && <AlgorithmDocs onClose={() => setShowAlgoDocs(false)} />}
 
       {/* COMPLETE overlay */}
       {phase === 'COMPLETE' && (

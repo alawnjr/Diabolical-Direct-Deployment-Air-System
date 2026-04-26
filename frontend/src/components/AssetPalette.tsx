@@ -2,6 +2,21 @@
 
 import type { GamePhase, GameState } from '@/lib/types';
 
+const ALGORITHM_OPTIONS = [
+  { value: 'grid_sweep',        label: '1. Grid Sweep' },
+  { value: 'spiral_outward',    label: '2. Spiral Outward' },
+  { value: 'saturation_fan',    label: '3. Saturation Fan' },
+  { value: 'bait_ladder',       label: '4. Bait Ladder' },
+  { value: 'reload_trap',       label: '5. Reload Trap' },
+  { value: 'multi_azimuth',     label: '6. Multi-Azimuth' },
+  { value: 'random_walk',       label: '7. Random Walk' },
+  { value: 'sector_claim',      label: '8. Sector Claim' },
+  { value: 'triangulation',     label: '9. Triangulation Lite' },
+  { value: 'hotspot_reinforce', label: '10. Hotspot Reinforce' },
+  { value: 'scout_fix_finish',  label: '11. Scout-Fix-Finish' },
+  { value: 'meta_selector',     label: '12. Meta Selector' },
+];
+
 interface AssetPaletteProps {
   phase: GamePhase;
   numBait: number;
@@ -12,6 +27,7 @@ interface AssetPaletteProps {
   numRadars: number;
   numLaunchers: number;
   numGas: number;
+  algorithm: string;
   onNumBaitChange: (n: number) => void;
   onNumReceiverChange: (n: number) => void;
   onNumCameraChange: (n: number) => void;
@@ -20,6 +36,8 @@ interface AssetPaletteProps {
   onNumRadarsChange: (n: number) => void;
   onNumLaunchersChange: (n: number) => void;
   onNumGasChange: (n: number) => void;
+  onAlgorithmChange: (algo: string) => void;
+  onShowAlgorithmDocs: () => void;
   onInitialize: () => void;
   onLaunchAll: () => void;
   onExecute: () => void;
@@ -102,6 +120,7 @@ export default function AssetPalette({
   numRadars,
   numLaunchers,
   numGas,
+  algorithm,
   onNumBaitChange,
   onNumReceiverChange,
   onNumCameraChange,
@@ -110,6 +129,8 @@ export default function AssetPalette({
   onNumRadarsChange,
   onNumLaunchersChange,
   onNumGasChange,
+  onAlgorithmChange,
+  onShowAlgorithmDocs,
   onInitialize,
   onLaunchAll,
   onExecute,
@@ -187,6 +208,52 @@ export default function AssetPalette({
             onCountChange={onNumCameraChange}
             disabled={!isPlanning}
           />
+        </div>
+
+        {/* Algorithm selector */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.55rem', color: '#556677', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            MOVEMENT ALGORITHM
+          </div>
+          <div style={{ border: '1px solid #1a2332', borderLeft: '3px solid #00e5ff', background: '#0d1420', padding: '0.5rem 0.6rem' }}>
+            <select
+              value={algorithm}
+              disabled={!isPlanning}
+              onChange={e => onAlgorithmChange(e.target.value)}
+              style={{
+                width: '100%',
+                background: '#0a0e14',
+                border: '1px solid #1a2332',
+                color: isPlanning ? '#c5cdd8' : '#556677',
+                fontSize: '0.62rem',
+                padding: '0.3rem 0.4rem',
+                fontFamily: 'inherit',
+                letterSpacing: '0.05em',
+                cursor: isPlanning ? 'pointer' : 'default',
+                marginBottom: '0.4rem',
+              }}
+            >
+              {ALGORITHM_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={onShowAlgorithmDocs}
+              style={{
+                width: '100%',
+                background: 'none',
+                border: '1px solid #2a3a4e',
+                color: '#00e5ff',
+                fontSize: '0.55rem',
+                padding: '0.25rem',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.1em',
+              }}
+            >
+              ? ALGORITHM TECHNIQUES
+            </button>
+          </div>
         </div>
 
         {/* Threat parameters */}
