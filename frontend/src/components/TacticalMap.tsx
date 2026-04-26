@@ -288,8 +288,8 @@ export default function TacticalMap({
             <stop offset="0%" stopColor="#ff1744" stopOpacity="0.07" />
             <stop offset="100%" stopColor="#ff1744" stopOpacity="0" />
           </radialGradient>
-          {/* Friendly territory subtle */}
-          <radialGradient id="friendly-grad" cx="0%" cy="50%" r="60%">
+          {/* Friendly territory subtle — anchored to 0,0 corner (bottom-left) */}
+          <radialGradient id="friendly-grad" cx="0%" cy="100%" r="70%">
             <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.03" />
             <stop offset="100%" stopColor="#00e5ff" stopOpacity="0" />
           </radialGradient>
@@ -322,10 +322,10 @@ export default function TacticalMap({
           strokeDasharray="8,4"
           opacity={0.7}
         />
-        <text x={febaX + 4} y={16} fill="#ffab00" fontSize={7} fontFamily="monospace" opacity={0.8}>
+        <text x={febaX + 4} y={S - 38} fill="#ffab00" fontSize={7} fontFamily="monospace" opacity={0.8}>
           FEBA
         </text>
-        <text x={febaX + 4} y={24} fill="#ffab00" fontSize={6} fontFamily="monospace" opacity={0.5}>
+        <text x={febaX + 4} y={S - 30} fill="#ffab00" fontSize={6} fontFamily="monospace" opacity={0.5}>
           {FEBA_X_NM} NM
         </text>
 
@@ -482,10 +482,10 @@ export default function TacticalMap({
         )}
 
         {/* ── Map labels ── */}
-        <text x={febaX / 2} y={22} fill="#00e5ff" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
+        <text x={febaX / 2} y={S - 48} fill="#00e5ff" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
           FRIENDLY TERRITORY
         </text>
-        <text x={febaX + (S - febaX) / 2} y={22} fill="#ff1744" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
+        <text x={febaX + (S - febaX) / 2} y={S - 48} fill="#ff1744" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
           CONTESTED AIRSPACE
         </text>
 

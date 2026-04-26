@@ -353,7 +353,9 @@ def _navigate_receiver_to_radar(drone: LucasDrone, state: SimState) -> None:
 
 
 def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimState) -> None:
-    """Move a drone straight toward (tx, ty) at DRONE_SPEED."""
+    """Move a drone straight toward (tx, ty) at DRONE_SPEED.
+    Updates drone.angle to this heading so the drone continues in the same
+    direction via _move_drone_direction if the target disappears next tick."""
     remaining = MAX_FLIGHT - drone.miles_flown
     if remaining <= 0:
         return
@@ -361,6 +363,7 @@ def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimStat
     d = math.sqrt(dx * dx + dy * dy)
     if d < 1e-6:
         return
+    drone.angle = math.atan2(dy, dx)
     step = min(DRONE_SPEED, d, remaining)
     ratio = step / d
     drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
@@ -688,16 +691,21 @@ def advance_tick(state: SimState) -> list[dict]:
     Advance the simulation by exactly one minute.
 
     Tick order:
-      1. Move all alive LUCAS drones via the active algorithm
-         (camera drones use their own scan-and-navigate logic)
-      2. Radar sight-range check → ping (reveals radar to receiver drones)
-         Radar periodic ping (every 30 ticks, regardless of LUCAS proximity)
-         On detection: associated SAM launcher fires once (90% hit rate)
-      3. Contact destructions:
-           - Drone reaches radar     → radar destroyed, drone dies
-           - Drone reaches launcher  → launcher destroyed, drone dies
+      1. Move all alive LUCAS drones (per-type rules override the algorithm):
+           - Bait drones:   follow the active algorithm.
+           - Strike drones: home in on the nearest revealed alive radar;
+                            fall back to current heading if none is known yet.
+           - Camera drones: scan for the nearest target within camera range and
+                            fly toward it; fall back to current heading if none.
+      2. Radar sight-range check → ping only when drones are in range.
+         Reveals radar position and enables strike-drone lock-on.
+      3. SAM launcher independent engagement: each launcher fires at the nearest
+         drone within its own range (independent of radar detection).
+      4. Contact destructions:
+           - Drone reaches radar      → radar destroyed, drone dies
+           - Drone reaches launcher   → launcher destroyed, drone dies
            - Drone reaches gas target → gas destroyed, drone survives
-      4. Check completion (tick ≥ 60)
+      5. Check completion (tick ≥ 60)
     """
     if state.complete:
         return []
@@ -711,29 +719,46 @@ def advance_tick(state: SimState) -> list[dict]:
     alive_gas = [t for t in state.gas_targets if not t.destroyed]
 
     # --- 1. Move drones ---
-    # Camera drones re-scan for the nearest target within their detection range each tick.
+    # Camera drones: rescan for nearest target within detection range each tick.
     for drone in alive_drones:
         if drone.drone_type == "camera" and drone.camera_on:
-            nearest_t: Optional[tuple[float, float]] = None
+            nearest: Optional[tuple[float, float]] = None
             nearest_d = float("inf")
-            for t in (*alive_radars, *alive_launchers, *alive_gas):
-                d = _dist(drone.x, drone.y, t.x, t.y)
+            for tgt in (*alive_radars, *alive_launchers, *alive_gas):
+                d = _dist(drone.x, drone.y, tgt.x, tgt.y)
                 if d <= CAMERA_DRONE_RANGE and d < nearest_d:
                     nearest_d = d
-                    nearest_t = (t.x, t.y)
-            drone.target_x = nearest_t[0] if nearest_t else None
-            drone.target_y = nearest_t[1] if nearest_t else None
+                    nearest = (tgt.x, tgt.y)
+            drone.target_x = nearest[0] if nearest else None
+            drone.target_y = nearest[1] if nearest else None
 
     for drone in alive_drones:
-        if drone.drone_type == "camera":
+        if drone.drone_type == "bait":
+            _move_drone_by_algorithm(drone, state)
+        elif drone.drone_type == "radar_receiver":
+            # Strike drone rule: home in on the nearest revealed alive radar regardless
+            # of the active algorithm.  If no radar is known yet, keep the current
+            # heading (drone.angle is already pointing toward the last known target
+            # from _move_drone_to_point, so _move_drone_direction continues straight).
+            alive_radar_ids = {r.id for r in state.radars if not r.destroyed}
+            candidates = [
+                (rx, ry)
+                for rid, (rx, ry) in state.revealed_radar_positions.items()
+                if rid in alive_radar_ids
+            ]
+            if candidates:
+                stx, sty = min(candidates, key=lambda p: _dist(drone.x, drone.y, p[0], p[1]))
+                _move_drone_to_point(drone, stx, sty, state)
+            else:
+                _move_drone_direction(drone, state)
+        else:  # camera
             if drone.target_x is not None:
                 _move_drone_to_point(drone, drone.target_x, drone.target_y, state)  # type: ignore[arg-type]
             else:
                 _move_drone_direction(drone, state)
-        else:
-            _move_drone_by_algorithm(drone, state)
 
-    # --- 2. Radar pings and SAM cuing ---
+    # --- 2. Radar pings ---
+    # A radar only pings (and reveals itself) when at least one drone is within range.
     alive_drones_now = [d for d in state.lucas_drones if d.alive]
 
     for radar in alive_radars:
@@ -744,63 +769,52 @@ def advance_tick(state: SimState) -> list[dict]:
             d for d in alive_drones_now
             if _dist(radar.x, radar.y, d.x, d.y) <= state.radar_sight
         ]
-        triggered = len(drones_in_sight) > 0
-        just_turned_on = _radar_just_turned_on(radar, state.tick)
+        if not drones_in_sight:
+            continue
 
-        if just_turned_on or triggered:
-            radar.revealed = True
-            state.revealed_radar_positions[radar.id] = (radar.x, radar.y)
-            ev: dict = {
-                "tick": state.tick,
-                "type": "radar_ping",
-                "radar_id": radar.id,
-                "x": round(radar.x, 2),
-                "y": round(radar.y, 2),
-                "detected_drone_ids": [d.id for d in drones_in_sight],
-            }
-            tick_events.append(ev)
-            state.events.append(ev)
+        radar.revealed = True
+        state.revealed_radar_positions[radar.id] = (radar.x, radar.y)
+        ev: dict = {
+            "tick": state.tick,
+            "type": "radar_ping",
+            "radar_id": radar.id,
+            "x": round(radar.x, 2),
+            "y": round(radar.y, 2),
+            "detected_drone_ids": [d.id for d in drones_in_sight],
+        }
+        tick_events.append(ev)
+        state.events.append(ev)
 
-            # Strike drones directly detected by this ping lock onto it
-            for d in drones_in_sight:
-                if d.drone_type == "radar_receiver":
-                    d.target_x = radar.x
-                    d.target_y = radar.y
+    # --- 3. SAM launcher independent engagement ---
+    # Each launcher autonomously fires at the nearest drone within its own range.
+    for launcher in alive_launchers:
+        if launcher.missiles_remaining <= 0:
+            continue
+        in_range = [
+            d for d in alive_drones_now
+            if _dist(launcher.x, launcher.y, d.x, d.y) <= state.missile_fire_range
+        ]
+        if not in_range:
+            continue
+        target_drone = min(in_range, key=lambda d: _dist(launcher.x, launcher.y, d.x, d.y))
+        hit = random.random() < MISSILE_HIT_RATE
+        if hit:
+            target_drone.alive = False
+        launcher.missiles_remaining -= 1
+        missile_ev: dict = {
+            "tick": state.tick,
+            "type": "missile_fired",
+            "launcher_id": launcher.id,
+            "target_drone_id": target_drone.id,
+            "launcher_x": round(launcher.x, 2),
+            "launcher_y": round(launcher.y, 2),
+            "hit": hit,
+        }
+        tick_events.append(missile_ev)
+        state.events.append(missile_ev)
+        alive_drones_now = [d for d in state.lucas_drones if d.alive]
 
-        if triggered:
-            armed = [
-                ml for ml in alive_launchers
-                if ml.radar_id == radar.id and ml.missiles_remaining > 0
-            ]
-            if armed:
-                launcher = armed[0]
-                in_sam_range = [
-                    d for d in drones_in_sight
-                    if _dist(launcher.x, launcher.y, d.x, d.y) <= state.missile_fire_range
-                ]
-                if in_sam_range:
-                    target_drone = min(
-                        in_sam_range,
-                        key=lambda d: _dist(launcher.x, launcher.y, d.x, d.y)
-                    )
-                    hit = random.random() < MISSILE_HIT_RATE
-                    if hit:
-                        target_drone.alive = False
-                    launcher.missiles_remaining -= 1
-                    missile_ev: dict = {
-                        "tick": state.tick,
-                        "type": "missile_fired",
-                        "launcher_id": launcher.id,
-                        "target_drone_id": target_drone.id,
-                        "launcher_x": round(launcher.x, 2),
-                        "launcher_y": round(launcher.y, 2),
-                        "hit": hit,
-                    }
-                    tick_events.append(missile_ev)
-                    state.events.append(missile_ev)
-                    alive_drones_now = [d for d in state.lucas_drones if d.alive]
-
-    # --- 3. Contact destructions ---
+    # --- 4. Contact destructions ---
     surviving = [d for d in state.lucas_drones if d.alive]
 
     for drone in surviving:
@@ -878,7 +892,7 @@ def advance_tick(state: SimState) -> list[dict]:
                 tick_events.append(ev)
                 state.events.append(ev)
 
-    # --- 4. Completion check ---
+    # --- 5. Completion check ---
     if state.tick >= MAX_TICKS:
         state.complete = True
 

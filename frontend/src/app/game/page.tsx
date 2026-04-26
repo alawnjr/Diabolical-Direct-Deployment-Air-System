@@ -35,7 +35,7 @@ export default function GamePage() {
 
   const lastTickRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const detectionTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const perRadarDetectionsRef = useRef<Map<string, { drones: Set<string>; tick: number }>>(new Map());
   const phaseRef = useRef<GamePhase>('PLANNING');
   phaseRef.current = phase;
 
@@ -89,9 +89,33 @@ export default function GamePage() {
         }, 2200);
       }
 
+      // Update per-radar detection sets from new ping events
+      pingEvts.forEach(e => {
+        perRadarDetectionsRef.current.set(e.radar_id, {
+          drones: new Set(e.detected_drone_ids ?? []),
+          tick: state.tick,
+        });
+      });
+
+      // Clear detections for destroyed radars or radars that haven't pinged in ~2 intervals
+      const RADAR_PING_TIMEOUT = 62;
+      const activeRadarIds = new Set(
+        (state.entities?.radars ?? []).filter(r => !r.destroyed).map(r => r.id)
+      );
+      for (const [radarId, entry] of perRadarDetectionsRef.current.entries()) {
+        if (!activeRadarIds.has(radarId) || state.tick - entry.tick > RADAR_PING_TIMEOUT) {
+          perRadarDetectionsRef.current.delete(radarId);
+        }
+      }
+
+      // Rebuild detected set as union of all active radar detections
+      const allDetected = new Set<string>();
+      perRadarDetectionsRef.current.forEach(entry => entry.drones.forEach(id => allDetected.add(id)));
+      setDetectedDroneIds(allDetected);
+
+      // Brief toast notification for newly detected drones
       const justDetected = [...new Set(pingEvts.flatMap(e => e.detected_drone_ids ?? []))];
       if (justDetected.length > 0) {
-        setDetectedDroneIds(prev => new Set([...prev, ...justDetected]));
         const notifs = justDetected.map(droneId => ({
           id: `notif-${droneId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
           droneId,
@@ -101,20 +125,6 @@ export default function GamePage() {
         setTimeout(() => {
           setDetectionNotifs(prev => prev.filter(n => !notifIds.includes(n.id)));
         }, 2500);
-
-        justDetected.forEach(droneId => {
-          const existing = detectionTimersRef.current.get(droneId);
-          if (existing) clearTimeout(existing);
-          const timer = setTimeout(() => {
-            setDetectedDroneIds(prev => {
-              const next = new Set(prev);
-              next.delete(droneId);
-              return next;
-            });
-            detectionTimersRef.current.delete(droneId);
-          }, 2500);
-          detectionTimersRef.current.set(droneId, timer);
-        });
       }
     }
   }, []);
@@ -147,8 +157,7 @@ export default function GamePage() {
     setActivePings([]);
     setDetectedDroneIds(new Set());
     setDetectionNotifs([]);
-    detectionTimersRef.current.forEach(t => clearTimeout(t));
-    detectionTimersRef.current.clear();
+    perRadarDetectionsRef.current.clear();
     setGameState(null);
     setBackendError(null);
 
@@ -183,8 +192,7 @@ export default function GamePage() {
     setActivePings([]);
     setDetectedDroneIds(new Set());
     setDetectionNotifs([]);
-    detectionTimersRef.current.forEach(t => clearTimeout(t));
-    detectionTimersRef.current.clear();
+    perRadarDetectionsRef.current.clear();
     setGameState(null);
     setBackendError(null);
     try {
@@ -260,8 +268,7 @@ export default function GamePage() {
     setActivePings([]);
     setDetectedDroneIds(new Set());
     setDetectionNotifs([]);
-    detectionTimersRef.current.forEach(t => clearTimeout(t));
-    detectionTimersRef.current.clear();
+    perRadarDetectionsRef.current.clear();
     lastTickRef.current = 0;
     setBackendError(null);
   }, [stopExecution]);
