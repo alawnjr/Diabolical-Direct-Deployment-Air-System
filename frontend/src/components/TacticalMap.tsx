@@ -1,7 +1,7 @@
 'use client';
 
 import type { GameState, PingEffect } from '@/lib/types';
-import { RADAR_SIGHT_NM, MISSILE_FIRE_RANGE_NM, FEBA_X_NM } from '@/lib/constants';
+import { RADAR_SIGHT_NM, MISSILE_FIRE_RANGE_NM } from '@/lib/constants';
 
 const S = 600; // SVG viewport size in px
 const NM = S / 200; // px per NM = 3
@@ -244,7 +244,6 @@ export default function TacticalMap({
 }: TacticalMapProps) {
   const entities = gameState?.entities;
 
-  const febaX = tx(FEBA_X_NM);
   const radarRingR = (gameState?.radar_sight ?? RADAR_SIGHT_NM) * NM;
   const samRingR = (gameState?.missile_fire_range ?? MISSILE_FIRE_RANGE_NM) * NM;
   const cameraRingR = (gameState?.camera_drone_range ?? 30) * NM;
@@ -308,26 +307,12 @@ export default function TacticalMap({
 
         {/* Territory overlays */}
         <rect x={0} y={0} width={S} height={S} fill="url(#friendly-grad)" />
-        <rect x={febaX} y={0} width={S - febaX} height={S} fill="url(#enemy-grad)" />
+        <rect x={0} y={0} width={S} height={S} fill="url(#enemy-grad)" />
 
         {/* Grid */}
         <GridLines />
         <GridLabels />
 
-        {/* FEBA line */}
-        <line
-          x1={febaX} y1={0} x2={febaX} y2={S}
-          stroke="#ffab00"
-          strokeWidth={1.5}
-          strokeDasharray="8,4"
-          opacity={0.7}
-        />
-        <text x={febaX + 4} y={S - 38} fill="#ffab00" fontSize={7} fontFamily="monospace" opacity={0.8}>
-          FEBA
-        </text>
-        <text x={febaX + 4} y={S - 30} fill="#ffab00" fontSize={6} fontFamily="monospace" opacity={0.5}>
-          {FEBA_X_NM} NM
-        </text>
 
         {/* Scale bar — 50 NM at bottom-left */}
         <line x1={20} y1={S - 18} x2={20 + 50 * NM} y2={S - 18} stroke="#2a3a4e" strokeWidth={1.5} />
@@ -482,10 +467,7 @@ export default function TacticalMap({
         )}
 
         {/* ── Map labels ── */}
-        <text x={febaX / 2} y={S - 48} fill="#00e5ff" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
-          FRIENDLY TERRITORY
-        </text>
-        <text x={febaX + (S - febaX) / 2} y={S - 48} fill="#ff1744" fontSize={7} textAnchor="middle" fontFamily="monospace" opacity={0.35}>
+        <text x={S - 6} y={18} fill="#ff1744" fontSize={7} textAnchor="end" fontFamily="monospace" opacity={0.35}>
           CONTESTED AIRSPACE
         </text>
 

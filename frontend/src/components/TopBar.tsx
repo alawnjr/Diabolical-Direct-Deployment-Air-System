@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { GamePhase } from '@/lib/types';
 import { PHASE_LABELS, PHASE_COLORS } from '@/lib/constants';
 
@@ -81,7 +82,7 @@ export default function TopBar({
       )}
 
       {/* Brand */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
+      <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
         <span
           style={{
             fontSize: '1.4rem',
@@ -105,7 +106,7 @@ export default function TopBar({
         >
           Data Driven Distributed Autonomous Systems
         </span>
-      </div>
+      </Link>
 
       {/* Divider */}
       <div style={{ width: 1, height: 28, background: '#1a2332' }} />
