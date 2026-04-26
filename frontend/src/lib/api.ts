@@ -1,6 +1,6 @@
 import type { GameState } from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5001';
 
 export async function healthCheck(): Promise<boolean> {
   for (let attempt = 0; attempt < 3; attempt++) {
