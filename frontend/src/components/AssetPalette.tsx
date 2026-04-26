@@ -6,6 +6,7 @@ interface AssetPaletteProps {
   phase: GamePhase;
   numBait: number;
   numReceiver: number;
+  numCamera: number;
   radarRange: number;
   samRange: number;
   numRadars: number;
@@ -13,6 +14,7 @@ interface AssetPaletteProps {
   numGas: number;
   onNumBaitChange: (n: number) => void;
   onNumReceiverChange: (n: number) => void;
+  onNumCameraChange: (n: number) => void;
   onRadarRangeChange: (n: number) => void;
   onSamRangeChange: (n: number) => void;
   onNumRadarsChange: (n: number) => void;
@@ -94,6 +96,7 @@ export default function AssetPalette({
   phase,
   numBait,
   numReceiver,
+  numCamera,
   radarRange,
   samRange,
   numRadars,
@@ -101,6 +104,7 @@ export default function AssetPalette({
   numGas,
   onNumBaitChange,
   onNumReceiverChange,
+  onNumCameraChange,
   onRadarRangeChange,
   onSamRangeChange,
   onNumRadarsChange,
@@ -118,7 +122,7 @@ export default function AssetPalette({
   const isReady = phase === 'READY';
   const isExec = phase === 'EXECUTION';
   const isComplete = phase === 'COMPLETE';
-  const totalDrones = numBait + numReceiver;
+  const totalDrones = numBait + numReceiver + numCamera;
 
   return (
     <aside
@@ -171,6 +175,16 @@ export default function AssetPalette({
             sublabel="Radar receiver — detects & destroys emitters"
             count={numReceiver}
             onCountChange={onNumReceiverChange}
+            disabled={!isPlanning}
+          />
+
+          <AssetCard
+            color="#00e5ff"
+            icon="⬠"
+            label="Camera Drone"
+            sublabel="Scans 30 NM radius — locks & destroys any target (click to toggle)"
+            count={numCamera}
+            onCountChange={onNumCameraChange}
             disabled={!isPlanning}
           />
         </div>
@@ -258,8 +272,12 @@ export default function AssetPalette({
               <span style={{ color: '#c5cdd8' }}>{numBait}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
-              <span style={{ color: '#76ff03' }}>● LUCAS Drones</span>
+              <span style={{ color: '#76ff03' }}>● LUCAS Strike</span>
               <span style={{ color: '#c5cdd8' }}>{numReceiver}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>
+              <span style={{ color: '#00e5ff' }}>⬠ Camera Drones</span>
+              <span style={{ color: '#c5cdd8' }}>{numCamera}</span>
             </div>
             <div style={{ height: 1, background: '#1a2332', margin: '0.2rem 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem' }}>

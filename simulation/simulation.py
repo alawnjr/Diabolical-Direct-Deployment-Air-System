@@ -28,13 +28,14 @@ SAM_PLACEMENT_RADIUS = 10.0  # launchers placed within this distance of their ra
 
 GAS_VALUE = 1
 DESTROY_THRESHOLD = 3.0  # miles — distance at which a drone "hits" a target
-STRIKE_REACTION_RADIUS = 50.0  # miles — strike drones lock onto a radar that pings them within this range
+CAMERA_DRONE_RANGE = 30.0  # miles — camera drone detection/lock-on radius
 
 DEFAULT_NUM_RADARS = 6
 DEFAULT_NUM_LAUNCHERS = 6
 DEFAULT_NUM_GAS = 4
 DEFAULT_BAIT = 10
 DEFAULT_RECV = 10
+DEFAULT_CAMERA = 4
 
 
 # ---------------------------------------------------------------------------
@@ -73,12 +74,15 @@ class GasTarget:
 @dataclass
 class LucasDrone:
     id: str
-    drone_type: str  # "bait" | "radar_receiver"
+    drone_type: str  # "bait" | "radar_receiver" | "camera"
     x: float
     y: float
     angle: float = 0.0   # radians — fan-out heading assigned at init
     alive: bool = True
     miles_flown: float = 0.0
+    target_x: Optional[float] = None  # strike/camera: locked target position
+    target_y: Optional[float] = None
+    camera_on: bool = True  # camera drones only: toggles active scanning
 
 
 @dataclass
@@ -200,6 +204,7 @@ def initialize_sim(
     num_radars: int = DEFAULT_NUM_RADARS,
     num_launchers: int = DEFAULT_NUM_LAUNCHERS,
     num_gas: int = DEFAULT_NUM_GAS,
+    num_camera: int = DEFAULT_CAMERA,
 ) -> SimState:
     """
     Create and return a fresh SimState.
@@ -237,7 +242,7 @@ def initialize_sim(
     ]
 
     # Fan-out angles: evenly spread across 0°–90° (NE quadrant from SW corner)
-    total_drones = num_bait + num_receiver
+    total_drones = num_bait + num_receiver + num_camera
     drones: list[LucasDrone] = []
     for i in range(num_bait):
         global_i = i
@@ -247,6 +252,10 @@ def initialize_sim(
         global_i = num_bait + i
         angle = math.radians(90.0 * (global_i + 0.5) / total_drones) if total_drones > 0 else math.radians(45)
         drones.append(LucasDrone(id=f"recv_{i+1}", drone_type="radar_receiver", x=0.0, y=0.0, angle=angle))
+    for i in range(num_camera):
+        global_i = num_bait + num_receiver + i
+        angle = math.radians(90.0 * (global_i + 0.5) / total_drones) if total_drones > 0 else math.radians(45)
+        drones.append(LucasDrone(id=f"cam_{i+1}", drone_type="camera", x=0.0, y=0.0, angle=angle))
 
     state.lucas_drones = drones
     return state
@@ -321,6 +330,23 @@ def _navigate_receiver_to_radar(drone: LucasDrone, state: SimState) -> None:
     state.visited_coords.add((round(drone.x), round(drone.y)))
 
 
+def _move_drone_to_point(drone: LucasDrone, tx: float, ty: float, state: SimState) -> None:
+    """Move a drone straight toward (tx, ty) at DRONE_SPEED."""
+    remaining = MAX_FLIGHT - drone.miles_flown
+    if remaining <= 0:
+        return
+    dx, dy = tx - drone.x, ty - drone.y
+    d = math.sqrt(dx * dx + dy * dy)
+    if d < 1e-6:
+        return
+    step = min(DRONE_SPEED, d, remaining)
+    ratio = step / d
+    drone.x = max(0.0, min(float(GRID_SIZE - 1), drone.x + dx * ratio))
+    drone.y = max(0.0, min(float(GRID_SIZE - 1), drone.y + dy * ratio))
+    drone.miles_flown += step
+    state.visited_coords.add((round(drone.x), round(drone.y)))
+
+
 # ---------------------------------------------------------------------------
 # Core simulation tick
 # ---------------------------------------------------------------------------
@@ -352,9 +378,24 @@ def advance_tick(state: SimState) -> list[dict]:
     alive_gas = [t for t in state.gas_targets if not t.destroyed]
 
     # --- 1. Move drones ---
+    # Camera drones re-scan for the nearest target within their detection range each tick.
+    for drone in alive_drones:
+        if drone.drone_type == "camera" and drone.camera_on:
+            nearest_t: Optional[tuple[float, float]] = None
+            nearest_d = float("inf")
+            for t in (*alive_radars, *alive_launchers, *alive_gas):
+                d = _dist(drone.x, drone.y, t.x, t.y)
+                if d <= CAMERA_DRONE_RANGE and d < nearest_d:
+                    nearest_d = d
+                    nearest_t = (t.x, t.y)
+            drone.target_x = nearest_t[0] if nearest_t else None
+            drone.target_y = nearest_t[1] if nearest_t else None
+
     for drone in alive_drones:
         if drone.drone_type == "radar_receiver":
             _navigate_receiver_to_radar(drone, state)
+        elif drone.drone_type == "camera" and drone.target_x is not None:
+            _move_drone_to_point(drone, drone.target_x, drone.target_y, state)  # type: ignore[arg-type]
         else:
             _move_drone_direction(drone, state)
 
@@ -386,10 +427,9 @@ def advance_tick(state: SimState) -> list[dict]:
             tick_events.append(ev)
             state.events.append(ev)
 
-            # Strike drones pinged within reaction radius lock onto this radar
+            # Strike drones directly detected by this ping lock onto it
             for d in drones_in_sight:
-                if (d.drone_type == "radar_receiver"
-                        and _dist(radar.x, radar.y, d.x, d.y) <= STRIKE_REACTION_RADIUS):
+                if d.drone_type == "radar_receiver":
                     d.target_x = radar.x
                     d.target_y = radar.y
 
@@ -458,8 +498,10 @@ def advance_tick(state: SimState) -> list[dict]:
         if not drone.alive:
             continue
 
-        # Launcher contact: any drone type destroys launcher and dies
+        # Launcher contact: only bait drones destroy launchers (strike drones ignore them)
         for launcher in alive_launchers:
+            if drone.drone_type == "radar_receiver":
+                continue
             if launcher.destroyed:
                 continue
             if _dist(drone.x, drone.y, launcher.x, launcher.y) <= DESTROY_THRESHOLD:
@@ -545,7 +587,7 @@ def get_public_state(state: SimState) -> dict[str, Any]:
         return d
 
     def drone_view(d: LucasDrone) -> dict:
-        return {
+        v: dict = {
             "id": d.id,
             "type": d.drone_type,
             "x": round(d.x, 2),
@@ -553,6 +595,9 @@ def get_public_state(state: SimState) -> dict[str, Any]:
             "alive": d.alive,
             "miles_flown": round(d.miles_flown, 2),
         }
+        if d.drone_type == "camera":
+            v["camera_on"] = d.camera_on
+        return v
 
     return {
         "tick": state.tick,
@@ -560,6 +605,7 @@ def get_public_state(state: SimState) -> dict[str, Any]:
         "complete": state.complete,
         "radar_sight": state.radar_sight,
         "missile_fire_range": state.missile_fire_range,
+        "camera_drone_range": CAMERA_DRONE_RANGE,
         "drones_alive": sum(1 for d in state.lucas_drones if d.alive),
         "drones_total": len(state.lucas_drones),
         "entities": {

@@ -27,11 +27,12 @@ export interface GasTargetEntity {
 
 export interface LucasDroneEntity {
   id: string;
-  type: 'bait' | 'radar_receiver';
+  type: 'bait' | 'radar_receiver' | 'camera';
   x: number;
   y: number;
   alive: boolean;
   miles_flown: number;
+  camera_on?: boolean;
 }
 
 export interface SimEntities {
@@ -103,6 +104,7 @@ export interface GameState {
   complete: boolean;
   radar_sight: number;
   missile_fire_range: number;
+  camera_drone_range?: number;
   drones_alive: number;
   drones_total: number;
   entities: SimEntities;

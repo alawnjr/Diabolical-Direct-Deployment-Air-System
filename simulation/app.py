@@ -60,6 +60,7 @@ from simulation import (
     DEFAULT_NUM_RADARS,
     DEFAULT_NUM_LAUNCHERS,
     DEFAULT_NUM_GAS,
+    DEFAULT_CAMERA,
     advance_tick,
     get_public_state,
     initialize_sim,
@@ -133,10 +134,11 @@ def start_sim():
     num_radars         = int(body.get("num_radars",    DEFAULT_NUM_RADARS))
     num_launchers      = int(body.get("num_launchers", DEFAULT_NUM_LAUNCHERS))
     num_gas            = int(body.get("num_gas",       DEFAULT_NUM_GAS))
+    num_camera         = int(body.get("num_camera",    DEFAULT_CAMERA))
     try:
         _sim = initialize_sim(
             num_bait, num_receiver, radar_sight, missile_fire_range,
-            num_radars, num_launchers, num_gas,
+            num_radars, num_launchers, num_gas, num_camera,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -233,6 +235,31 @@ def simulate():
     body   = request.get_json(force=True, silent=True) or {}
     result = run_simulation(body)
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/camera_toggle
+#
+# Toggle a camera drone's active scanning on or off.
+#
+# Request body (JSON):
+#   { "drone_id": str }
+#
+# Response:
+#   { "drone_id": str, "camera_on": bool }
+# ---------------------------------------------------------------------------
+@app.route("/api/camera_toggle", methods=["POST"])
+def camera_toggle():
+    global _sim
+    if _sim is None:
+        return _no_sim_error()
+    body = request.get_json(silent=True) or {}
+    drone_id = body.get("drone_id")
+    for drone in _sim.lucas_drones:
+        if drone.id == drone_id and drone.drone_type == "camera":
+            drone.camera_on = not drone.camera_on
+            return jsonify(get_public_state(_sim))
+    return jsonify({"error": f"Camera drone '{drone_id}' not found."}), 404
 
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ interface TacticalMapProps {
   showThreatRings: boolean;
   showDetected: boolean;
   onToggleThreatRings: () => void;
+  onCameraToggle?: (droneId: string) => void;
 }
 
 function GridLines() {
@@ -83,11 +84,13 @@ function DroneIcon({
   cx,
   cy,
   alive,
+  cameraOn,
 }: {
-  type: 'bait' | 'radar_receiver';
+  type: 'bait' | 'radar_receiver' | 'camera';
   cx: number;
   cy: number;
   alive: boolean;
+  cameraOn?: boolean;
 }) {
   if (!alive) {
     return (
@@ -98,7 +101,6 @@ function DroneIcon({
     );
   }
   if (type === 'bait') {
-    // Diamond ◆ in yellow
     return (
       <polygon
         points={`${cx},${cy - 5} ${cx + 5},${cy} ${cx},${cy + 5} ${cx - 5},${cy}`}
@@ -107,7 +109,22 @@ function DroneIcon({
       />
     );
   }
-  // LUCAS receiver — circle with center dot in green
+  if (type === 'camera') {
+    // Pentagon with a small lens dot; cyan when active, gray when off
+    const color = cameraOn ? '#00e5ff' : '#445566';
+    const r = 5;
+    const pts = Array.from({ length: 5 }, (_, i) => {
+      const a = (Math.PI / 2) + (2 * Math.PI * i) / 5;
+      return `${cx + r * Math.cos(a)},${cy - r * Math.sin(a)}`;
+    }).join(' ');
+    return (
+      <g>
+        <polygon points={pts} fill={color} opacity={0.9} />
+        <circle cx={cx} cy={cy} r={1.5} fill="#0a0e14" opacity={0.8} />
+      </g>
+    );
+  }
+  // LUCAS strike receiver — circle with center dot in green
   return (
     <g>
       <circle cx={cx} cy={cy} r={4} fill="none" stroke="#76ff03" strokeWidth={1.5} opacity={0.9} />
@@ -223,12 +240,14 @@ export default function TacticalMap({
   showThreatRings,
   showDetected,
   onToggleThreatRings,
+  onCameraToggle,
 }: TacticalMapProps) {
   const entities = gameState?.entities;
 
   const febaX = tx(FEBA_X_NM);
   const radarRingR = (gameState?.radar_sight ?? RADAR_SIGHT_NM) * NM;
   const samRingR = (gameState?.missile_fire_range ?? MISSILE_FIRE_RANGE_NM) * NM;
+  const cameraRingR = (gameState?.camera_drone_range ?? 30) * NM;
 
   const radars = entities?.radars ?? [];
   const launchers = entities?.missile_launchers ?? [];
@@ -418,6 +437,24 @@ export default function TacticalMap({
           </g>
         ))}
 
+        {/* ── Camera drone detection rings ── */}
+        {drones.filter(d => d.type === 'camera' && d.alive && d.camera_on).map(d => (
+          <g
+            key={`cam-ring-${d.id}`}
+            style={{
+              transform: `translate(${tx(d.x)}px, ${ty(d.y)}px)`,
+              transition: 'transform 540ms linear',
+            }}
+          >
+            <circle
+              cx={0} cy={0} r={cameraRingR}
+              fill="#00e5ff" fillOpacity={0.03}
+              stroke="#00e5ff" strokeWidth={0.6}
+              strokeDasharray="3,3" opacity={0.4}
+            />
+          </g>
+        ))}
+
         {/* ── LUCAS drones (alive + dead — dead shown as green X) ── */}
         {drones.map(d => (
           <g
@@ -426,9 +463,11 @@ export default function TacticalMap({
             style={{
               transform: `translate(${tx(d.x)}px, ${ty(d.y)}px)`,
               transition: d.alive ? 'transform 540ms linear' : 'none',
+              cursor: d.type === 'camera' && d.alive ? 'pointer' : 'default',
             }}
+            onClick={d.type === 'camera' && d.alive && onCameraToggle ? () => onCameraToggle(d.id) : undefined}
           >
-            <DroneIcon type={d.type} cx={0} cy={0} alive={d.alive} />
+            <DroneIcon type={d.type} cx={0} cy={0} alive={d.alive} cameraOn={d.camera_on} />
           </g>
         ))}
 
@@ -507,6 +546,7 @@ export default function TacticalMap({
         {[
           { color: '#ffd600', shape: '◆', label: 'Bait LUCAS Drone' },
           { color: '#76ff03', shape: '○', label: 'LUCAS Strike Drone' },
+          { color: '#00e5ff', shape: '⬠', label: 'Camera Drone (click=toggle)' },
           { color: '#76ff03', shape: '✕', label: 'Drone Destroyed' },
           { color: '#ffab00', shape: '◆', label: 'EWR Radar' },
           { color: '#ff1744', shape: '▲', label: 'SAM Launcher' },

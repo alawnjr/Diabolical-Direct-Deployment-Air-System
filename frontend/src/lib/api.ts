@@ -25,6 +25,7 @@ export async function startSim(
   numRadars = 6,
   numLaunchers = 6,
   numGas = 4,
+  numCamera = 4,
 ): Promise<GameState> {
   const res = await fetch(`${API_BASE}/api/start`, {
     method: 'POST',
@@ -37,6 +38,7 @@ export async function startSim(
       num_radars: numRadars,
       num_launchers: numLaunchers,
       num_gas: numGas,
+      num_camera: numCamera,
     }),
   });
   if (!res.ok) {
@@ -68,5 +70,15 @@ export async function runSim(): Promise<GameState> {
 export async function getSimState(): Promise<GameState> {
   const res = await fetch(`${API_BASE}/api/state`);
   if (!res.ok) throw new Error(`state failed: ${res.status}`);
+  return res.json();
+}
+
+export async function toggleCameraRange(droneId: string): Promise<GameState> {
+  const res = await fetch(`${API_BASE}/api/camera_toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ drone_id: droneId }),
+  });
+  if (!res.ok) throw new Error(`camera_toggle failed: ${res.status}`);
   return res.json();
 }

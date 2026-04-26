@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GamePhase, GameState, SimEvent, PingEffect, RadarPingEvent } from '@/lib/types';
-import { healthCheck, startSim, tickSim, runSim } from '@/lib/api';
+import { healthCheck, startSim, tickSim, runSim, toggleCameraRange } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import AssetPalette from '@/components/AssetPalette';
 import TacticalMap from '@/components/TacticalMap';
@@ -14,6 +14,7 @@ export default function GamePage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [numBait, setNumBait] = useState(8);
   const [numReceiver, setNumReceiver] = useState(8);
+  const [numCamera, setNumCamera] = useState(4);
   const [radarRange, setRadarRange] = useState(100);
   const [samRange, setSamRange] = useState(25);
   const [numRadars, setNumRadars] = useState(6);
@@ -149,7 +150,7 @@ export default function GamePage() {
     setBackendError(null);
 
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera);
       setGameState(state);
       setPhase('READY');
     } catch (err) {
@@ -160,7 +161,7 @@ export default function GamePage() {
           : 'Failed to initialize simulation. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas]);
 
   const handleExecute = useCallback(() => {
     if (phase !== 'READY') return;
@@ -184,7 +185,7 @@ export default function GamePage() {
     setGameState(null);
     setBackendError(null);
     try {
-      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas);
+      const state = await startSim(numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas, numCamera);
       setGameState(state);
       setPhase('EXECUTION');
       setIsExecuting(true);
@@ -196,7 +197,7 @@ export default function GamePage() {
           : 'Failed to launch mission. Check that the backend server is running.'
       );
     }
-  }, [backendAvailable, numBait, numReceiver, radarRange, samRange, numRadars, numLaunchers, numGas]);
+  }, [backendAvailable, numBait, numReceiver, numCamera, radarRange, samRange, numRadars, numLaunchers, numGas]);
 
   // Execution loop
   useEffect(() => {
@@ -262,6 +263,15 @@ export default function GamePage() {
     setBackendError(null);
   }, [stopExecution]);
 
+  const handleCameraToggle = useCallback(async (droneId: string) => {
+    try {
+      const state = await toggleCameraRange(droneId);
+      setGameState(state);
+    } catch {
+      // ignore — drone may already be dead
+    }
+  }, []);
+
   const handleRetryConnection = useCallback(() => {
     setBackendError(null);
     checkBackend();
@@ -300,6 +310,7 @@ export default function GamePage() {
           phase={phase}
           numBait={numBait}
           numReceiver={numReceiver}
+          numCamera={numCamera}
           radarRange={radarRange}
           samRange={samRange}
           numRadars={numRadars}
@@ -307,6 +318,7 @@ export default function GamePage() {
           numGas={numGas}
           onNumBaitChange={setNumBait}
           onNumReceiverChange={setNumReceiver}
+          onNumCameraChange={setNumCamera}
           onRadarRangeChange={setRadarRange}
           onSamRangeChange={setSamRange}
           onNumRadarsChange={setNumRadars}
@@ -329,6 +341,7 @@ export default function GamePage() {
             showThreatRings={showThreatRings}
             showDetected={showDetected}
             onToggleThreatRings={() => setShowThreatRings(v => !v)}
+            onCameraToggle={handleCameraToggle}
           />
           {/* Detection notifications */}
           {detectionNotifs.length > 0 && (
