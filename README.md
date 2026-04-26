@@ -6,20 +6,20 @@ A wargaming simulator for **Suppression / Destruction of Enemy Air Defenses (SEA
 
 ## Overview
 
-D³AS lets you configure and launch swarms of autonomous LUCAS drones against a randomised enemy Integrated Air Defense System (IADS). The backend runs a physics-accurate simulation engine; the frontend provides a real-time tactical map with live event feeds, BDA panels, and 12 selectable movement algorithms.
+D³AS lets you configure and launch swarms of autonomous LUCAS drones against a randomised enemy Integrated Air Defense System (IADS). The backend runs a physics-accurate simulation engine; the frontend provides a real-time tactical map with live event feeds, BDA panels, 12 selectable attack algorithms, 11 adversary defense placement strategies, and an analytics dashboard.
 
 **Drone types**
 | Type | Role |
 |---|---|
 | Bait LUCAS | Fast (200 mph) decoy — drains SAM magazines |
 | LUCAS Strike | Radar receiver — homes on emitters and destroys them |
-| Camera Drone | ISR platform — scans 30 NM, locks and strikes any target |
+| Camera Drone | ISR platform — 30 NM active scan, locks and strikes any target on contact |
 
 **Enemy systems**
 | System | Behaviour |
 |---|---|
-| EWR Radar | 30-tick power cycle (on 5 ticks, off 25); reveals drone positions on ping |
-| SAM Launcher | Radar-cued; 2 missiles, 90% hit probability, 25 NM engagement radius |
+| EWR Radar | 30-tick power cycle (on 5 ticks, off 25 ticks); reveals drone positions on ping |
+| SAM Launcher | Always visible; 2 missiles, 90% hit probability, 25 NM engagement radius |
 | Fuel Target | Static supply depot — bonus strike target |
 
 ---
@@ -48,7 +48,7 @@ cd simulation
 python -m venv venv
 
 # Activate — Windows Command Prompt / PowerShell
-venv\Scripts\activate
+venv\Scripts\activate.bat
 
 # Activate — macOS / Linux
 source venv/bin/activate
@@ -60,10 +60,10 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The backend will start on **http://localhost:5000**. You should see:
+The backend will start on **http://localhost:5001**. You should see:
 
 ```
- * Running on http://127.0.0.1:5000
+ * Running on http://127.0.0.1:5001
  * Debug mode: on
 ```
 
@@ -94,21 +94,59 @@ The frontend will start on **http://localhost:3000**.
 
 Navigate to **http://localhost:3000**
 
-The top-right status indicator will show **BACKEND ONLINE** (green) once the frontend successfully connects to the Flask API. If it shows **BACKEND OFFLINE**, make sure the Flask server is running and try the **↺ RETRY CONNECTION** button.
+The top-right status indicator will show **BACKEND ONLINE** (green) once the frontend successfully connects to the Flask API. If it shows **BACKEND OFFLINE**, make sure the Flask server is running and try the **↺ RETRY CONNECTION** button. The app will automatically fall back to a standalone TypeScript simulation engine if the backend is unreachable.
 
 ---
 
 ## Usage
 
-1. **ASSET CONFIGURATION** (left panel) — set drone counts, radar/SAM ranges, enemy composition, and movement algorithm.
+1. **ASSET CONFIGURATION** (left panel) — set drone counts, radar/SAM ranges, enemy composition, attack algorithm, and defense placement strategy.
 2. Click **▶ LAUNCH ALL** to initialise and immediately begin execution, or **⬡ INITIALIZE ONLY** to review the map before committing.
 3. During execution, click **⚡ FULL RUN** to skip to tick 60, or let it animate tick-by-tick.
 4. The **MISSION COMPLETE** overlay shows destruction rate, targets destroyed, and drones lost.
 5. Click **↩ NEW SCENARIO** to reset and try a different configuration.
+6. Visit the **Analytics** page for algorithm matchup statistics, per-algorithm performance breakdowns, and optimal counter-strategy recommendations.
 
-### Movement Algorithms
+---
 
-Click **? ALGORITHM TECHNIQUES** in the sidebar for a full description of all 12 algorithms. The default (**Meta Selector**) runs Grid Sweep until a radar is detected, then switches to Hotspot Reinforce.
+## Attack Algorithms (12)
+
+Click **? ALGORITHM TECHNIQUES** in the sidebar for full descriptions. The default (**Meta Selector**) runs Grid Sweep until a radar is detected, then switches to Hotspot Reinforce.
+
+| Algorithm | Strategy |
+|---|---|
+| Grid Sweep | Systematic horizontal lane coverage across the full map |
+| Spiral Outward | Expanding archimedean spiral from launch origin |
+| Saturation Fan | Mass saturation in a tight 20° cone to overwhelm SAM magazines |
+| Bait Ladder | Staggered bait activation every 2 ticks; receivers fan out immediately |
+| Reload Trap | Two-phase: bait active ticks 1–25, receivers strike ticks 26–60 |
+| Multi-Azimuth | Three bearing clusters (~20°, ~45°, ~70°) for broad approach coverage |
+| Random Walk | Jitter heading ±25° each tick — unpredictable paths |
+| Sector Claim | Divide map into a grid; assign each drone its own sector |
+| Triangulation Lite | Spread receivers across all revealed radars by index |
+| Hotspot Reinforce | All drones converge on the nearest alive revealed radar |
+| Scout-Fix-Finish | Baits probe; receivers hold until first radar confirmed, then converge |
+| Meta Selector | Grid Sweep → Hotspot Reinforce on first radar detection |
+
+---
+
+## Defense Algorithms (11)
+
+Click **? DEFENSE PLACEMENT** in the sidebar for full descriptions.
+
+| Algorithm | Formation |
+|---|---|
+| Random | Procedurally scattered with minimum separation constraints |
+| Perimeter Picket | Radars on an 80 NM ring; SAMs 8 NM inward facing center |
+| Corner Anchors | Four map corners + center + edge midpoints |
+| Layered Rings | Outer ring (75 NM radius) + inner ring (22 NM radius) |
+| Fortress Core | All assets clustered within 14 NM of map center |
+| Kill Channel | Dense column along the 45° NE axis from origin |
+| SAM Forward Screen | Forward radars near NE edge; rear radars in SW interior |
+| Magazine Wall | Assets clustered around 2–3 hub positions for dense SAM packing |
+| Dispersed Ambush | Maximum-spread uniform grid across map |
+| Staggered Emission Web | Uniform grid with deterministic staggered power offsets |
+| Honeycomb Grid | Hexagon vertices (57 NM radius) + center + inner ring |
 
 ---
 
@@ -118,13 +156,27 @@ Click **? ALGORITHM TECHNIQUES** in the sidebar for a full description of all 12
 .
 ├── simulation/          # Python Flask backend
 │   ├── app.py           # REST API (Flask)
-│   ├── simulation.py    # Core simulation engine + 12 algorithms
+│   ├── simulation.py    # Core engine: 12 attack + 11 defense algorithms
 │   └── requirements.txt
 └── frontend/            # Next.js frontend
     └── src/
-        ├── app/         # Next.js App Router pages
-        ├── components/  # UI components (TacticalMap, AssetPalette, …)
-        └── lib/         # Types, API client, constants
+        ├── app/
+        │   ├── page.tsx          # Landing page
+        │   ├── game/page.tsx     # Main mission interface
+        │   └── analytics/page.tsx# Algorithm matchup analytics
+        ├── components/
+        │   ├── TacticalMap       # SVG real-time battlefield (600×600 px, 1 px = 1 NM)
+        │   ├── AssetPalette      # Configuration sidebar
+        │   ├── MissionLog        # Live event stream
+        │   ├── BDAPanel          # Battle Damage Assessment
+        │   ├── TopBar            # Phase indicator, tick counter, backend status
+        │   ├── AlgorithmDocs     # Attack algorithm reference modal
+        │   └── DefenseAlgorithmDocs # Defense algorithm reference modal
+        └── lib/
+            ├── types.ts          # Entity interfaces
+            ├── api.ts            # Backend API client
+            ├── simulation.ts     # Standalone TypeScript simulation engine
+            └── constants.ts      # Shared constants
 ```
 
 ---
@@ -138,7 +190,17 @@ Click **? ALGORITHM TECHNIQUES** in the sidebar for a full description of all 12
 | `POST` | `/api/tick` | Advance N ticks |
 | `POST` | `/api/run` | Run to completion (tick 60) |
 | `GET` | `/api/state` | Current simulation state |
-| `POST` | `/api/camera_toggle` | Toggle camera drone scanning |
+| `POST` | `/api/camera_toggle` | Toggle camera drone active scanning |
+
+---
+
+## Scoring
+
+| Target | Points |
+|---|---|
+| EWR Radar destroyed | 4 |
+| SAM Launcher destroyed | 3 |
+| Fuel Target destroyed | 1 |
 
 ---
 
