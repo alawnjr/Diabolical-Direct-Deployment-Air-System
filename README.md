@@ -1,12 +1,13 @@
 # D³AS — Data Driven Distributed Autonomous Systems
-
-A wargaming simulator for **Suppression / Destruction of Enemy Air Defenses (SEAD/DEAD)** using autonomous drone swarms. Built for the SCSP Hackathon 2026 · Wargaming Track.
+**SCSP HACKATHON 2026**
+**Team name**: D3AS_Tools
+**Track**: Wargaming
+ Built for the SCSP Hackathon 2026 · Wargaming Track.
 
 ---
 
 ## Overview
-
-D³AS lets you configure and launch swarms of autonomous LUCAS drones against a randomised enemy Integrated Air Defense System (IADS). The backend runs a physics-accurate simulation engine; the frontend provides a real-time tactical map with live event feeds, BDA panels, 12 selectable attack algorithms, 11 adversary defense placement strategies, and an analytics dashboard.
+A wargaming simulator for **Suppression / Destruction of Enemy Air Defenses (SEAD/DEAD)** using autonomous drone swarms. D³AS lets you configure and launch swarms of autonomous LUCAS drones against a randomised enemy Integrated Air Defense System (IADS). The backend runs a physics-accurate simulation engine; the frontend provides a real-time tactical map with live event feeds, BDA panels, 12 selectable attack algorithms, 11 adversary defense placement strategies, and an analytics dashboard.
 
 **Drone types**
 | Type | Role |
